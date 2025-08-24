@@ -15,7 +15,6 @@ def get_Company():
     companies = requests.get(URL, headers=headers).json()
     for company in companies:
         if company.get("Name") == COMPANY_NAME:
-            print("found company:")
             idNum = company.get("ID")
             
             return requests.get(BASE_URL+"companies/"+str(idNum), headers=headers).json()    
@@ -25,6 +24,13 @@ def get_Costomers(ID):
     URL = BASE_URL+"companies/"+str(ID)+'/customers/'
     return requests.get(URL, headers=headers).json()
 
+def find_Customer(ID, GivenName, FamilyName):
+    URL = BASE_URL+"companies/"+str(ID)+'/customers/'
+    customers = requests.get(URL, headers=headers).json()
+    for customer in customers:
+        if customer.get("GivenName").strip() == GivenName.strip() and customer.get("FamilyName").strip() == FamilyName.strip():
+            return customer
+    return f"could not find customer with name: {GivenName} {FamilyName}"
 
 def add_Customer(ID, Title, GivenName, FamilyName, Phone):
     customer = {
@@ -44,6 +50,40 @@ def remove_Customer(ID, GivenName, FamilyName):
             URL += "individuals/"+str(customer.get("ID"))
             requests.delete(URL, headers=headers)
 ###
+class API:
+    def __init__(self, ID):
+        self.ID = ID
+        pass
+
+    def structureData(self, input):
+        data = input.split(maxsplit = 1)
+        return data
+        # take the user input string and break it into an array of strings where [0] is the command keyword [1] is the query
+
+    def interperet(self, input):
+        filteredData = self.structureData(input)
+
+        if filteredData[0] == "search_customer":
+            if len(filteredData) < 2:
+                print("Please provide a full name to search.")
+                return
+
+            data = filteredData[1].split(maxsplit=1)
+
+            if len(data) < 2:
+                print("Please enter both first and last name.")
+                return
+
+            customer = find_Customer(self.ID, data[0], data[1])
+            if customer:
+                print(json.dumps(customer, indent=2))
+            else:
+                print("Could not find customer with the given credentials")
+        if filteredData[0] == "create_job":
+            pass
+        else:
+            print(f"Uknown Command Input: {filteredData[0]}")
+        # direct flow of input and call necessary functions
 
 headers = {
     'Authorization': f'Bearer {ACCESS_TOKEN}',
@@ -51,6 +91,18 @@ headers = {
     'Content-Type': 'application/json'
 }
 ## pulls and prints all details related to the company
+running = True
+company = get_Company()
+testAPI = API(company.get("ID"))
+while running:
+    userInput = input("enter API search: ")
+    if userInput == "q":
+        running = False
+        break
+    outputData = testAPI.interperet(userInput)
+
+
+
 company = get_Company()
 print(json.dumps(company, indent=2))
 
@@ -73,6 +125,8 @@ print()
 print("removing customer")
 remove_Customer(company.get("ID"), "Mike", "Ross")
 print(json.dumps(get_Costomers(company.get("ID")), indent=2))
+
+# jobs - x name
 
 
 del company, jobList, customers
