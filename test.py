@@ -50,6 +50,37 @@ def remove_Customer(ID, GivenName, FamilyName):
             URL += "individuals/"+str(customer.get("ID"))
             requests.delete(URL, headers=headers)
 ###
+
+def test_Requests(ID):
+    company = get_Company()
+    print(json.dumps(company, indent=2))
+
+    ## gets all jobs from the company and prints
+    print("getting all jobs...")
+    jobList = get_Jobs(company.get("ID"))
+    print(json.dumps(jobList, indent=2))
+
+    ## get and display customers
+    print("getting all customers...")
+    customers = get_Costomers(company.get("ID"))
+    print(json.dumps(customers, indent=2))
+
+    ## add a customer and redisplay new list of customers
+    print("adding customer...")
+    add_Customer(company.get("ID"),"Mr","Mike", "Ross", "0422352436")
+    print(json.dumps(get_Costomers(company.get("ID")), indent=2))
+
+    print()
+
+    ## delete a customer and redisplay new list of customers
+    print("removing customer...")
+    remove_Customer(company.get("ID"), "Mike", "Ross")
+    print(json.dumps(get_Costomers(company.get("ID")), indent=2))
+
+    # jobs - x name
+
+
+    del company, jobList, customers
 class API:
     def __init__(self, ID):
         self.ID = ID
@@ -90,7 +121,8 @@ headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json'
 }
-## pulls and prints all details related to the company
+
+
 running = True
 company = get_Company()
 testAPI = API(company.get("ID"))
@@ -101,33 +133,4 @@ while running:
         break
     outputData = testAPI.interperet(userInput)
 
-
-
-company = get_Company()
-print(json.dumps(company, indent=2))
-
-## gets all jobs from the company and prints
-jobList = get_Jobs(company.get("ID"))
-print(json.dumps(jobList, indent=2))
-
-## get and display customers
-customers = get_Costomers(company.get("ID"))
-print(json.dumps(customers, indent=2))
-
-## add a customer and redisplay new list of customers
-print("adding customer")
-add_Customer(company.get("ID"),"Mr","Mike", "Ross", "0422352436")
-print(json.dumps(get_Costomers(company.get("ID")), indent=2))
-
-print()
-
-## delete a customer and redisplay new list of customers
-print("removing customer")
-remove_Customer(company.get("ID"), "Mike", "Ross")
-print(json.dumps(get_Costomers(company.get("ID")), indent=2))
-
-# jobs - x name
-
-
-del company, jobList, customers
-
+test_Requests(company.get("ID"))
