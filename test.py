@@ -5,12 +5,12 @@ ACCESS_TOKEN = '8077324ef83f67fbc7b0507e1e03ec85ff6a4655'
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
 COMPANY_NAME = "Evergreen Electrical"
 
-#function definitions
-def get_Jobs(ID):
+### API FUNCTIONS ###
+def get_Jobs(ID): #gets list of all jobs 
     URL = BASE_URL+"companies/"+str(ID)+'/jobs/'
     return requests.get(URL, headers=headers).json()
 
-def get_Company():
+def get_Company(): #finds evergreen electrical
     URL = BASE_URL+"companies/"
     companies = requests.get(URL, headers=headers).json()
     for company in companies:
@@ -20,11 +20,11 @@ def get_Company():
             return requests.get(BASE_URL+"companies/"+str(idNum), headers=headers).json()    
     return "company not found!"
 
-def get_Costomers(ID):
+def get_Costomers(ID): #gets all customers
     URL = BASE_URL+"companies/"+str(ID)+'/customers/'
     return requests.get(URL, headers=headers).json()
 
-def find_Customer(ID, GivenName, FamilyName):
+def find_Customer(ID, GivenName, FamilyName): #finds a customer
     URL = BASE_URL+"companies/"+str(ID)+'/customers/'
     customers = requests.get(URL, headers=headers).json()
     for customer in customers:
@@ -32,7 +32,7 @@ def find_Customer(ID, GivenName, FamilyName):
             return customer
     return f"could not find customer with name: {GivenName} {FamilyName}"
 
-def add_Customer(ID, Title, GivenName, FamilyName, Phone):
+def add_Customer(ID, Title, GivenName, FamilyName, Phone): #adds a customer
     customer = {
         "Title":Title,
         "GivenName":GivenName,
@@ -42,16 +42,16 @@ def add_Customer(ID, Title, GivenName, FamilyName, Phone):
     URL = BASE_URL+"companies/"+str(ID)+'/customers/individuals/'
     requests.post(URL, headers=headers, data=json.dumps(customer))
 
-def remove_Customer(ID, GivenName, FamilyName):
+def remove_Customer(ID, GivenName, FamilyName): #removes a customer
     URL = BASE_URL+"companies/"+str(ID)+'/customers/'
     customers = requests.get(URL, headers=headers).json()
     for customer in customers:
         if customer.get("GivenName") == GivenName and customer.get("FamilyName") == FamilyName:
             URL += "individuals/"+str(customer.get("ID"))
             requests.delete(URL, headers=headers)
-###
 
-def test_Requests(ID):
+### TESTING ###
+def test_Requests(ID): #function for running all test API requests and prints out resulting data
     company = get_Company()
     print(json.dumps(company, indent=2))
 
