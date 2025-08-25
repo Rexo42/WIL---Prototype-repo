@@ -28,7 +28,9 @@ def find_Customer(ID, GivenName, FamilyName): #finds a customer
     URL = BASE_URL+"companies/"+str(ID)+'/customers/'
     customers = requests.get(URL, headers=headers).json()
     for customer in customers:
-        if customer.get("GivenName").strip() == GivenName.strip() and customer.get("FamilyName").strip() == FamilyName.strip():
+        name = customer.get("GivenName").lower()
+        surname = customer.get("FamilyName").lower()
+        if name.strip() == GivenName.strip() and surname.strip() == FamilyName.strip():
             return customer
     return f"could not find customer with name: {GivenName} {FamilyName}"
 
@@ -89,11 +91,15 @@ class API:
         pass
 
     def structureData(self, input):
-        data = input.split(maxsplit = 1)
+        data = input.lower()
+        data = data.split(maxsplit = 1)
         return data
         # take the user input string and break it into an array of strings where [0] is the command keyword [1] is the query
 
     def interperet(self, input):
+        if (input.lower() == "help"):
+            print("{search_customer 'firstname Lastname'} to search for a customer")
+            return
         filteredData = self.structureData(input)
 
         if filteredData[0] == "search_customer":
@@ -110,9 +116,11 @@ class API:
             customer = find_Customer(self.ID, data[0], data[1])
             if customer:
                 print(json.dumps(customer, indent=2))
+                return
             else:
                 print("Could not find customer with the given credentials")
-        if filteredData[0] == "create_job":
+                return
+        elif filteredData[0] == "create_job":
             pass
         else:
             print(f"Uknown Command Input: {filteredData[0]}")
