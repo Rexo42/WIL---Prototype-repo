@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DocuSign JWT Grant - 첫 번째 단계: 사용자 동의 받기
-한 번만 실행하면 됩니다.
+DocuSign JWT Grant - Step 1: Obtain user consent
+You only need to run this once.
 """
 
 import os
@@ -12,12 +12,12 @@ import webbrowser
 load_dotenv()
 
 def get_consent_url():
-    """사용자 동의를 위한 URL 생성"""
+    """Generate URL for user consent"""
     
     client_id = os.getenv("CLIENT_ID")
     redirect_uri = os.getenv("REDIRECT_URI")
     
-    # Individual consent URL (개별 동의)
+    # Individual consent URL
     consent_url = (
         f"https://account-d.docusign.com/oauth/auth?"
         f"response_type=code&"
@@ -29,21 +29,21 @@ def get_consent_url():
     return consent_url
 
 def main():
-    print("🔐 DocuSign JWT Grant - 사용자 동의 받기")
+    print("🔐 DocuSign JWT Grant - Obtain user consent")
     print("=" * 50)
-    
+
     consent_url = get_consent_url()
-    print("🔐 DocuSign JWT Grant 사용자 동의 URL:")
+    print("🔐 DocuSign JWT Grant user consent URL:")
     print(f"{consent_url}")
 
-    # 자동으로 브라우저 열기
+    # Automatically open browser
     try:
         webbrowser.open(consent_url)
     except:
-        print("❌ 브라우저 자동 실행 실패. 위 URL을 복사해 브라우저에 붙여넣으세요.")
+        print("❌ Failed to open browser automatically. Please copy the above URL and paste it into your browser.")
 
-    input("\n동의 완료 후 Enter를 눌러주세요...")
-    print("🎉 동의 완료!")
+    input("\nPress Enter after completing consent...")
+    print("🎉 Consent complete!")
 
 if __name__ == "__main__":
     main()
