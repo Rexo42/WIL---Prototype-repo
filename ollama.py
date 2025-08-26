@@ -42,6 +42,8 @@ def chat_with_model(user_message):
     else:
         print("❌ Error:", response.status_code, response.text)
 
+
+chat_with_model("")
 running = True
 while running:
     userInput = input("Enter message for LLM: ")
