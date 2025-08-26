@@ -17,6 +17,7 @@ inspected aircon. unit is not old. isolator has no signs of moisture. Connection
 
 chatHistory = []
 chatHistory.append({"role": "user", "content":initPrompt})
+chatHistory.append({"role": "user", "content":demoNotes})
 
 
 def chat_with_model(user_message):
