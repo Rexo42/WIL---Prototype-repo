@@ -132,7 +132,6 @@ headers = {
     'Content-Type': 'application/json'
 }
 
-
 running = True
 company = get_Company()
 testAPI = API(company.get("ID"))
