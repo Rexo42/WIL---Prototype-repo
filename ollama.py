@@ -1,5 +1,5 @@
 import requests
-modelName = "gpt-oss:20b"
+modelName = "gpt-oss:20b" ###If your using a different model change this variable to what your using ###
 baseURL = "http://localhost:11434/api/chat"
 ### Initial system prompt ###
 initPrompt = """
