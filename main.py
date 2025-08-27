@@ -104,7 +104,7 @@ class API:
         jobData = get_Jobs(self.ID)
         for job in jobData:
             print(job.get("ID"))
-            evergreenAgent.sendNotes("what is my name")
+            evergreenAgent.sendNotes("what is my name") ## contents needs to be the logs when i get them
         # takes in an instance of ollama??
             #for job in jobs
             # does logic for getting notes off timeline and updating them and putting it into job description
