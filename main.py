@@ -1,6 +1,6 @@
 import requests
 import json
-#import ollama
+import ollama
 
 ACCESS_TOKEN = '8077324ef83f67fbc7b0507e1e03ec85ff6a4655'
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
@@ -91,6 +91,8 @@ def test_Requests(ID): #function for running all test API requests and prints ou
 
     del company, jobList, customers
 
+def get_Job_Logs(ID):
+    pass
 ### User Interface ###
 class API:
     def __init__(self, headers):
@@ -98,19 +100,24 @@ class API:
         self.headers = headers
 
 
-    def updateJobs(evergreenAgent):
+    def updateJobs(self, evergreenAgent):
+        jobData = get_Jobs(self.ID)
+        for job in jobData:
+            print(job.get("ID"))
+            evergreenAgent.sendNotes("what is my name")
         # takes in an instance of ollama??
             #for job in jobs
             # does logic for getting notes off timeline and updating them and putting it into job description
-        pass
 
 running = True
 testAPI = API(headers)
+testAgent = ollama.EvergreenAgent()
 
 while running:
     userInput = input("enter API query ('r' or 'q') ")
     if userInput == "q":
         running = False
+        print("exiting program runtime...")
         break
     elif userInput == "r":
-        testAPI.updateJobs()
+        testAPI.updateJobs(testAgent)

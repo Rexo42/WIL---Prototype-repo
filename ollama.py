@@ -56,13 +56,5 @@ class EvergreenAgent():
         else:
             print("❌ Error:", response.status_code, response.text)
 
-
-agent = EvergreenAgent()
-running = True
-while running:
-    userInput = input("Enter message for LLM: ")
-    if (userInput.strip() == 'q'):
-        print("exiting program...")
-        quit()
-    else:
-        agent.sendNotes(userInput)
+    def testRun(self):
+        self.sendNotes(self.demoNotes)
