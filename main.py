@@ -2,7 +2,11 @@ import requests
 import json
 import ollama
 import htmlUtility
-
+### TODO
+#   additional functionality to mark jobs as completed or flag them for review if deemed potentially incomplete
+#       error handling ie: no work notes just skip over/leave
+#
+###
 ACCESS_TOKEN = '8077324ef83f67fbc7b0507e1e03ec85ff6a4655'
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
 COMPANY_NAME = "Evergreen Electrical"
