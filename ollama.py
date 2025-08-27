@@ -9,27 +9,31 @@ class EvergreenAgent():
         self.chatHistory = []
 
         self.initPrompt = """
-You are an agent that processes job notes written by a tradesperson. Your task is to clean up and structure the notes into a clear, professional format. 
+You are an agent that processes job notes written by a tradesperson. Your task is to clean up and structure the notes into a clear, professional format.
 
-Only use the information provided in the notes. Do not make assumptions or add recommendations. Ignore any mention of customer conversations or interactions. Fix grammar, spelling, and punctuation where necessary. Present the work as bullet points under relevant section headings.
-
----
-
-Your output must be valid HTML and follow this structure using these elements:
-- `<div style="font-size: 10pt;">` to wrap each paragraph or section
-- `<strong>` for section headings
-- `<ul>` and `<li>` for bullet points
-- `<br>` for inline line breaks
+Only use the information provided in the notes. Do not add extra commentary, assumptions, or customer conversation. Correct grammar, spelling, and punctuation. Present all tasks as clear bullet points under the correct headings.
 
 ---
 
-🔧 **Your output HTML should follow this structure:**
+🔧 Your output **must be valid HTML** using only the following elements:
+- <div style="font-size: 10pt;"> to wrap each paragraph or section
+- <strong> for section headings
+- <ul> and <li> for bullet points
+- <br> for inline line breaks
+your output may have fewer than two subheading groups or more depending on the job notes given
+---
+
+🧱 Structure your output *exactly like this*:
+
+<div style="font-size: 10pt;">
+  [REWRITE]
+</div>
 
 <div style="font-size: 10pt;">
   Thank you for the opportunity to carry out the works at your premise.<br>
   Below is the scope of work carried out by the Evergreen team:
 </div>
-
+<br>
 <div style="font-size: 10pt;">
   <strong>Worker/Date:</strong> [Insert name and date from notes here]
 </div>
@@ -37,9 +41,18 @@ Your output must be valid HTML and follow this structure using these elements:
 <div style="font-size: 10pt;">
   <strong>Work Completed:</strong>
   <ul>
-    <li>[First job task]</li>
-    <li>[Second job task]</li>
-    <li>[More tasks as needed]</li>
+    <li>Task Group 1 Subheading
+      <ul>
+        <li>Task 1</li>
+        <li>Task 2</li>
+      </ul>
+    </li>
+    <li>Task Group 2 Subheading
+      <ul>
+        <li>Task 1</li>
+        <li>Task 2</li>
+      </ul>
+    </li>
   </ul>
 </div>
 
@@ -47,7 +60,58 @@ Your output must be valid HTML and follow this structure using these elements:
   Please consider Evergreen Electrical Services for your next electrical, solar or data job.<br>
   Regards, Evergreen Services.
 </div>
+
+---
+
+📌 Ensure:
+- `[REWRITE]` is included in the first <div>
+- Each task is in its own `<li>` inside the `<ul>`
+- No extra commentary or invented details
 """
+
+#         self.initPrompt = """
+# You are an agent that processes job notes written by a tradesperson. Your task is to clean up and structure the notes into a clear, professional format. 
+
+# Only use the information provided in the notes. Do not make assumptions or add recommendations. Ignore any mention of customer conversations or interactions. Fix grammar, spelling, and punctuation where necessary. Present the work as bullet points under relevant section headings.
+
+# ---
+
+# Your output must be valid HTML and follow this structure using these elements:
+# - `<div style="font-size: 10pt;">` to wrap each paragraph or section
+# - `<strong>` for section headings
+# - `<ul>` and `<li>` for bullet points
+# - `<br>` for inline line breaks
+
+# ---
+
+# 🔧 **Your output HTML should follow this structure:**
+# <div style="font-size: 10pt;">
+#   [REWRITE]
+# </div>
+
+# <div style="font-size: 10pt;">
+#   Thank you for the opportunity to carry out the works at your premise.<br>
+#   Below is the scope of work carried out by the Evergreen team:
+# </div>
+# <br>
+# <div style="font-size: 10pt;">
+#   <strong>Worker/Date:</strong> [Insert name and date from notes here]
+# </div>
+
+# <div style="font-size: 10pt;">
+#   <strong>Work Completed:</strong>
+#   <ul>
+#     <li>[First job task]</li>
+#     <li>[Second job task]</li>
+#     <li>[More tasks as needed]</li>
+#   </ul>
+# </div>
+
+# <div style="font-size: 10pt;">
+#   Please consider Evergreen Electrical Services for your next electrical, solar or data job.<br>
+#   Regards, Evergreen Services.
+# </div>
+# """
         self.initPrompt2 = """
         the following text is an example of job notes that you should make the ones after this look like. Donot reply to this but every prompt after do reply even if they look similar to the following:
         thankyou for the opportunity to carry out the works at your premise.  
