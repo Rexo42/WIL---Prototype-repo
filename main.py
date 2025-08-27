@@ -91,8 +91,20 @@ def test_Requests(ID): #function for running all test API requests and prints ou
 
     del company, jobList, customers
 
-def get_Job_Logs(ID):
-    pass
+def get_Job_Logs(ID, JobID):
+    params = {
+    "search": "all",
+    "columns": "Type,Message,Date"
+}
+    relevantNotes = []
+    URL = BASE_URL+"companies/"+str(ID)+"/jobs/"+str(JobID)+"/timelines/"
+    print(URL)
+    response = requests.get(URL, headers=headers)
+    res = response.json()
+    for note in res:
+        if note.get("Type") == "Customer Note":
+            relevantNotes.append(note)
+    return relevantNotes
 ### User Interface ###
 class API:
     def __init__(self, headers):
@@ -104,7 +116,10 @@ class API:
         jobData = get_Jobs(self.ID)
         for job in jobData:
             print(job.get("ID"))
-            evergreenAgent.sendNotes("what is my name") ## contents needs to be the logs when i get them
+            result = get_Job_Logs(self.ID, job.get("ID"))
+            print(json.dumps(result, indent=2))
+            #print(get_Job_Logs(self.ID, job.get("ID") ) )
+            evergreenAgent.testRun() ## contents needs to be the logs when i get them
         # takes in an instance of ollama??
             #for job in jobs
             # does logic for getting notes off timeline and updating them and putting it into job description
@@ -112,7 +127,7 @@ class API:
 running = True
 testAPI = API(headers)
 testAgent = ollama.EvergreenAgent()
-
+print("NEW RUN...")
 while running:
     userInput = input("enter API query ('r' or 'q') ")
     if userInput == "q":
