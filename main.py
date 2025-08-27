@@ -1,6 +1,7 @@
 import requests
 import json
 import ollama
+import htmlUtility
 
 ACCESS_TOKEN = '8077324ef83f67fbc7b0507e1e03ec85ff6a4655'
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
@@ -98,14 +99,18 @@ def get_Job_Logs(ID, JobID):
 }
     relevantNotes = []
     URL = BASE_URL+"companies/"+str(ID)+"/jobs/"+str(JobID)+"/timelines/"
-    print(URL)
+    #print(demo.status_code)
+    ###
+
+
+    #print(URL)
     response = requests.get(URL, headers=headers)
     res = response.json()
     for note in res:
         if note.get("Type") == "Customer Note":
-            relevantNotes.append(note)
-    return relevantNotes
-### User Interface ###
+            return note
+
+
 class API:
     def __init__(self, headers):
         self.ID = get_Company().get("ID")
@@ -115,11 +120,34 @@ class API:
     def updateJobs(self, evergreenAgent):
         jobData = get_Jobs(self.ID)
         for job in jobData:
+            print(json.dumps(job, indent=2))
             print(job.get("ID"))
+            content = htmlUtility.strip_html(job.get("Description"))
+            if content.startswith("[REWRITE]"):
+                print("skipping job...")
+                continue
             result = get_Job_Logs(self.ID, job.get("ID"))
             print(json.dumps(result, indent=2))
-            #print(get_Job_Logs(self.ID, job.get("ID") ) )
-            evergreenAgent.testRun() ## contents needs to be the logs when i get them
+            filtered = htmlUtility.strip_html(result.get("Message"))
+            editedMessage = evergreenAgent.sendNotes(filtered)
+
+            payload = {
+            "Description" : editedMessage
+            }
+
+            updateURL = BASE_URL+"companies/"+str(self.ID)+"/jobs/"+str(job.get("ID"))
+    
+            checker = requests.patch(updateURL, headers=headers, json=payload)
+            print(f"PATCH status: {checker.status_code}")
+            if checker.status_code not in (200, 204):
+                print("❌ Error updating job:")
+                print(checker.text)
+            else:
+                print("✅ Job updated successfully")
+            
+            #######evergreenAgent.testRun()
+
+             ## contents needs to be the logs when i get them
         # takes in an instance of ollama??
             #for job in jobs
             # does logic for getting notes off timeline and updating them and putting it into job description

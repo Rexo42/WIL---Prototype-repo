@@ -13,19 +13,40 @@ You are an agent that processes job notes written by a tradesperson. Your task i
 
 Only use the information provided in the notes. Do not make assumptions or add recommendations. Ignore any mention of customer conversations or interactions. Fix grammar, spelling, and punctuation where necessary. Present the work as bullet points under relevant section headings.
 
-Your response must follow this structure:
+---
 
-"thankyou for the opportunity to carry out the works at your premise.  
-below is the scope of work carried out by the evergreen team:"
+Your output must be valid HTML and follow this structure using these elements:
+- `<div style="font-size: 10pt;">` to wrap each paragraph or section
+- `<strong>` for section headings
+- `<ul>` and `<li>` for bullet points
+- `<br>` for inline line breaks
 
-[Insert the worker's name and date here, e.g. "Worker/Date: Hayden Jensen, 22/08/25"]
+---
 
-[Structured job notes follow]
+🔧 **Your output HTML should follow this structure:**
 
-At the end of the output, add the following line:
-"please consider evergreen electrical services for your next electrical, solar or data jobs, regards evergreen services"
+<div style="font-size: 10pt;">
+  Thank you for the opportunity to carry out the works at your premise.<br>
+  Below is the scope of work carried out by the Evergreen team:
+</div>
 
-Make sure the worker’s name and date are taken from the notes if available, and placed exactly as shown above — between the intro paragraph and the job details.
+<div style="font-size: 10pt;">
+  <strong>Worker/Date:</strong> [Insert name and date from notes here]
+</div>
+
+<div style="font-size: 10pt;">
+  <strong>Work Completed:</strong>
+  <ul>
+    <li>[First job task]</li>
+    <li>[Second job task]</li>
+    <li>[More tasks as needed]</li>
+  </ul>
+</div>
+
+<div style="font-size: 10pt;">
+  Please consider Evergreen Electrical Services for your next electrical, solar or data job.<br>
+  Regards, Evergreen Services.
+</div>
 """
         self.initPrompt2 = """
         the following text is an example of job notes that you should make the ones after this look like. Donot reply to this but every prompt after do reply even if they look similar to the following:
@@ -75,6 +96,7 @@ Make sure the worker’s name and date are taken from the notes if available, an
             data = response.json()
             assistant_message = data.get("message", {}).get("content", "")
             print("💬 Assistant: \n", assistant_message)
+            return assistant_message
 
             self.chatHistory.append({"role": "assistant", "content": assistant_message})
         else:
