@@ -9,7 +9,6 @@ class EvergreenAgent():
         self.chatHistory = []
         self.APIkey = APIkey
         self.initPrompt = """
-        s
 You are an agent that processes job notes written by a tradesperson. Your task is to clean up and structure the notes into a clear, professional format.
 
 Only use the information provided in the notes. Do not add extra commentary, assumptions, or customer conversation. Correct grammar, spelling, and punctuation. Present all tasks as clear bullet points under the correct headings.
