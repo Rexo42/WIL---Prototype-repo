@@ -114,12 +114,10 @@ def get_Job_Logs(ID, JobID):
         if note.get("Type") == "Customer Note":
             return note
 
-
 class API:
     def __init__(self, headers):
         self.ID = get_Company().get("ID")
         self.headers = headers
-
 
     def updateJobs(self, evergreenAgent):
         jobData = get_Jobs(self.ID)

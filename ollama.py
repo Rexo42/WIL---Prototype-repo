@@ -7,7 +7,6 @@ class EvergreenAgent():
         self.modelName = modelName
         self.URL = URL
         self.chatHistory = []
-
         self.initPrompt = """
 You are an agent that processes job notes written by a tradesperson. Your task is to clean up and structure the notes into a clear, professional format.
 
