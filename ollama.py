@@ -1,54 +1,135 @@
 import requests
-modelName = "gpt-oss:20b" ###If your using a different model change this variable to what your using ###
-baseURL = "http://localhost:11434/api/chat"
-### Initial system prompt ###
-initPrompt = """
-Your are an Agent that will take in job notes written by a tradie and organise/structure them in a more readable format. Donot make recommendations yourself and only use information provided in the notes.
-make sure spelling and punctuations is good aswell. consider each new prompt a new job note/not related to the last. you will put this above the notes: thankyou for the opportunity to carry out the works at your premise.
-below is the scope of work carried out by the evergreen team
-and you will put this below the notes: please consider evergreen electrical services for your next electrical, solar or data jobs, regards evergreen services
+
+
+
+class EvergreenAgent():
+    def __init__(self, modelName = "deepseek-chat", APIkey = "sk-0511a6cb95fa47a893456a161a9e5ad9"):
+        self.modelName = modelName
+        self.URL = "https://api.deepseek.com/v1/chat/completions"
+        self.chatHistory = []
+        self.APIkey = APIkey
+        self.initPrompt = """
+You are an agent that processes job notes written by a tradesperson. Your task is to clean up and structure the notes into a clear, professional format, and rephrase blunt or overly direct notes into a professional, customer-friendly tone.
+
+Only use the information provided in the notes. Do not add extra commentary, assumptions, or customer conversation. Correct grammar, spelling, and punctuation. Present all tasks as clear bullet points under the correct headings. 
+
+---
+
+🔧 Your output **must be valid HTML** using only the following elements:
+- <div style="font-size: 10pt;"> to wrap each paragraph or section
+- <strong> for section headings
+- <ul> and <li> for bullet points
+- <br> for inline line breaks
+your output may have fewer than two subheading groups or more depending on the job notes given
+---
+
+🧱 Structure your output *exactly like this*:
+
+If the job notes clearly indicate the work is incomplete / requires follow-up / cannot be marked as finished, then the VERY FIRST line of the output must be:
+<div style="font-size: 10pt;">[REWRITE] F</div>
+If the job is complete, DO NOT include any flag line at all. Only put [REWRITE]
+<div style="font-size: 10pt;">
+  [REWRITE]
+</div>
+
+<div style="font-size: 10pt;">
+  Thank you for the opportunity to carry out the works at your premise.<br>
+  Below is the scope of work carried out by the Evergreen team:
+</div>
+<br>
+<div style="font-size: 10pt;">
+  <strong>Worker/Date:</strong> [Insert name and date from notes here]
+</div>
+
+<div style="font-size: 10pt;">
+  <strong>Work Completed:</strong>
+  <ul>
+    <li>Task Group 1 Subheading
+      <ul>
+        <li>Task 1</li>
+        <li>Task 2</li>
+      </ul>
+    </li>
+    <li>Task Group 2 Subheading
+      <ul>
+        <li>Task 1</li>
+        <li>Task 2</li>
+      </ul>
+    </li>
+  </ul>
+</div>
+
+<div style="font-size: 10pt;">
+  Please consider Evergreen Electrical Services for your next electrical, solar or data job.<br>
+  Regards, Evergreen Services.
+</div>
+
+---
+
+📌 Ensure:
+- `[REWRITE]` is included in the first <div>
+- Each task is in its own `<li>` inside the `<ul>`
+- No extra commentary or invented details
 """
-demoNotes ="""
-Hayden Jensen (22/08/2025)
-Arrived at site, Spoke to customer, inspected hot water system, plug for the pump had lots of water on  top of it. no cracks in connection box. no penetrations through back of box. siliconed around plug
-inspected aircon. unit is not old. isolator has no signs of moisture. Connection in ac high enough not be an issue.
-"""
+        self.initPrompt2 = """
+        the following text is an example of job notes that you should make the ones after this look like. Donot reply to this but every prompt after do reply even if they look similar to the following:
+        thankyou for the opportunity to carry out the works at your premise.  
+        below is the scope of work carried out by the evergreen team:
 
+        Hayden Jenson, 22/08/25
 
-chatHistory = []
-chatHistory.append({"role": "user", "content":initPrompt})
-chatHistory.append({"role": "user", "content":demoNotes})
+        **Hot Water System Inspection**
+        - Pump plug observed with excess water on top.
+        - No cracks or penetrations in the connection box.
+        - Silicon seal applied around the plug.
 
+        **Air Conditioning System Inspection**
+        - Unit is not old.
+        - Isolator free of moisture.
+        - Connection height is sufficient; no issues detected.
 
-def chat_with_model(user_message):
-    chatHistory.append({"role": "user", "content": user_message})
+        please consider evergreen electrical services for your next electrical, solar or data jobs, regards evergreen services
+        """
 
-    promptPayload = {
-        "model": modelName,
-        "stream": False,
-        "messages": chatHistory
-    }
+        self.chatHistory.append({"role": "user", "content": self.initPrompt})
+        self.chatHistory.append({"role": "user", "content": self.initPrompt2})
+        self.chatHistory.append({"role": "assistant", "content": "Understood. Ready to process job notes."})
+        self.demoNotes = """
+        Hayden Jensen (22/08/2025)
+        Arrived at site, Spoke to customer, inspected hot water system, plug for the pump had lots of water on  top of it. no cracks in connection box. no penetrations through back of box. siliconed around plug
+        inspected aircon. unit is not old. isolator has no signs of moisture. Connection in ac high enough not be an issue.
+        """
 
-    print("⏳ Sending request...")
-    response = requests.post(baseURL, json=promptPayload, timeout=300)
-    print("✅ Response received.")
+    def sendNotes(self, jobNotes):
+        self.chatHistory.append({"role": "user", "content": jobNotes})
 
-    if response.status_code == 200:
-        data = response.json()
-        assistant_message = data.get("message", {}).get("content", "")
-        print("💬 Assistant: \n", assistant_message)
+        prompt_payload = {
+            "model" : self.modelName,
+            "stream" : False,
+            "messages" : self.chatHistory
+        }
 
-        chatHistory.append({"role": "assistant", "content": assistant_message})
-    else:
-        print("❌ Error:", response.status_code, response.text)
+        headers = {
+        'Authorization': f'Bearer {self.APIkey}',
+        'Content-Type': 'application/json'
+        }
 
+        
+        print("⏳ Sending request...")
+        response = requests.post(self.URL, headers=headers ,json=prompt_payload, timeout=300)
 
-chat_with_model("")
-running = True
-while running:
-    userInput = input("Enter message for LLM: ")
-    if (userInput.strip() == 'q'):
-        print("exiting program...")
-        quit()
-    else:
-        chat_with_model(userInput)
+        self.chatHistory.pop(-1)
+        print("✅ Response received.")
+
+        if response.status_code == 200:
+            data = response.json()
+            assistant_message = data['choices'][0]['message']['content']
+            print("💬 Assistant: \n", assistant_message)
+            return assistant_message
+
+            #self.chatHistory.append({"role": "assistant", "content": assistant_message})
+        else:
+            print("❌ Error:", response.status_code, response.text)
+
+    def testRun(self):
+        self.sendNotes(self.demoNotes)
