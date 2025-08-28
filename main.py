@@ -1,9 +1,21 @@
 import requests
 import json
-
+import ollama
+import htmlUtility
+### TODO
+#   additional functionality to mark jobs as completed or flag them for review if deemed potentially incomplete
+#       error handling ie: no work notes just skip over/leave
+#
+###
 ACCESS_TOKEN = '8077324ef83f67fbc7b0507e1e03ec85ff6a4655'
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
 COMPANY_NAME = "Evergreen Electrical"
+
+headers = {
+'Authorization': f'Bearer {ACCESS_TOKEN}',
+'Accept': 'application/json',
+'Content-Type': 'application/json'
+}
 
 ### API FUNCTIONS ###
 def get_Jobs(ID): #gets list of all jobs 
@@ -84,62 +96,73 @@ def test_Requests(ID): #function for running all test API requests and prints ou
 
     del company, jobList, customers
 
-### User Interface ###
-class API:
-    def __init__(self, ID):
-        self.ID = ID
-        pass
-
-    def structureData(self, input):
-        data = input.lower()
-        data = data.split(maxsplit = 1)
-        return data
-        # take the user input string and break it into an array of strings where [0] is the command keyword [1] is the query
-
-    def interperet(self, input):
-        if (input.lower() == "help"):
-            print("{search_customer 'firstname Lastname'} to search for a customer")
-            return
-        filteredData = self.structureData(input)
-
-        if filteredData[0] == "search_customer":
-            if len(filteredData) < 2:
-                print("Please provide a full name to search.")
-                return
-
-            data = filteredData[1].split(maxsplit=1)
-
-            if len(data) < 2:
-                print("Please enter both first and last name.")
-                return
-
-            customer = find_Customer(self.ID, data[0], data[1])
-            if customer:
-                print(json.dumps(customer, indent=2))
-                return
-            else:
-                print("Could not find customer with the given credentials")
-                return
-        elif filteredData[0] == "create_job":
-            pass
-        else:
-            print(f"Uknown Command Input: {filteredData[0]}")
-        # direct flow of input and call necessary functions
-
-headers = {
-    'Authorization': f'Bearer {ACCESS_TOKEN}',
-    'Accept': 'application/json',
-    'Content-Type': 'application/json'
+def get_Job_Logs(ID, JobID):
+    params = {
+    "search": "all",
+    "columns": "Type,Message,Date"
 }
+    relevantNotes = []
+    URL = BASE_URL+"companies/"+str(ID)+"/jobs/"+str(JobID)+"/timelines/"
+    #print(demo.status_code)
+    ###
+
+
+    #print(URL)
+    response = requests.get(URL, headers=headers)
+    res = response.json()
+    for note in res:
+        if note.get("Type") == "Customer Note":
+            return note
+
+class API:
+    def __init__(self, headers):
+        self.ID = get_Company().get("ID")
+        self.headers = headers
+
+    def updateJobs(self, evergreenAgent):
+        jobData = get_Jobs(self.ID)
+        for job in jobData:
+            print(json.dumps(job, indent=2))
+            print(job.get("ID"))
+            content = htmlUtility.strip_html(job.get("Description"))
+            # if content.startswith("[REWRITE]"):
+            #     print("skipping job...")
+            #     continue
+            result = get_Job_Logs(self.ID, job.get("ID"))
+            print(json.dumps(result, indent=2))
+            filtered = htmlUtility.strip_html(result.get("Message"))
+            editedMessage = evergreenAgent.sendNotes(filtered)
+
+            payload = {
+            "Description" : editedMessage
+            }
+
+            updateURL = BASE_URL+"companies/"+str(self.ID)+"/jobs/"+str(job.get("ID"))
+    
+            checker = requests.patch(updateURL, headers=headers, json=payload)
+            print(f"PATCH status: {checker.status_code}")
+            if checker.status_code not in (200, 204):
+                print("❌ Error updating job:")
+                print(checker.text)
+            else:
+                print("✅ Job updated successfully")
+            
+            #######evergreenAgent.testRun()
+
+             ## contents needs to be the logs when i get them
+        # takes in an instance of ollama??
+            #for job in jobs
+            # does logic for getting notes off timeline and updating them and putting it into job description
 
 running = True
-company = get_Company()
-testAPI = API(company.get("ID"))
+testAPI = API(headers)
+testAgent = ollama.EvergreenAgent()
+print("NEW RUN...")
 while running:
-    userInput = input("enter API search: ")
+    userInput = input("enter API query ('r' or 'q') ")
     if userInput == "q":
         running = False
+        print("exiting program runtime...")
         break
-    outputData = testAPI.interperet(userInput)
-
-test_Requests(company.get("ID"))
+    elif userInput == "r":
+        testAPI.updateJobs(testAgent)
