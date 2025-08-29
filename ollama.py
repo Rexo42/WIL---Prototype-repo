@@ -1,9 +1,12 @@
 import requests
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 
 
 class EvergreenAgent():
-    def __init__(self, modelName = "deepseek-chat", APIkey = "sk-0511a6cb95fa47a893456a161a9e5ad9"):
+    def __init__(self, modelName = "deepseek-chat", APIkey = os.getenv("API_KEY_Deepseek")):
         self.modelName = modelName
         self.URL = "https://api.deepseek.com/v1/chat/completions"
         self.chatHistory = []
@@ -20,7 +23,7 @@ Only use the information provided in the notes. Do not add extra commentary, ass
 - <strong> for section headings
 - <ul> and <li> for bullet points
 - <br> for inline line breaks
-your output may have fewer than two subheading groups or more depending on the job notes given
+your output may have fewer than two subheading groups or more depending on the job notes given. in the below template, where it says "[REWRITE]" I instead want you to make it "[REWRITE] F" if you determine the job is incomplete or requires more attention by the company
 ---
 
 🧱 Structure your output *exactly like this*:
