@@ -108,11 +108,6 @@ def get_Job_Logs(ID, JobID):
 }
     relevantNotes = []
     URL = BASE_URL+"companies/"+str(ID)+"/jobs/"+str(JobID)+"/timelines/"
-    #print(demo.status_code)
-    ###
-
-
-    #print(URL)
     response = requests.get(URL, headers=headers)
     res = response.json()
     for note in res:
@@ -127,14 +122,17 @@ class API:
     def updateJobs(self, evergreenAgent):
         jobData = get_Jobs(self.ID)
         for job in jobData:
-            print(json.dumps(job, indent=2))
-            print(job.get("ID"))
+            currentID = job.get("ID")
+            URL = BASE_URL + 'companies/'+str(self.ID)+'/jobs/'+str(currentID)
+            data = requests.get(URL, headers=headers).json()
+            if (data.get("Stage") == "Invoiced" or data.get("Stage")== "Complete"):
+                continue
+
             content = htmlUtility.strip_html(job.get("Description"))
             if content.startswith("[REWRITE]"):
                 print("skipping job...")
                 continue
             result = get_Job_Logs(self.ID, job.get("ID"))
-            print(json.dumps(result, indent=2))
             filtered = htmlUtility.strip_html(result.get("Message"))
             editedMessage = evergreenAgent.sendNotes(filtered)
 
@@ -151,13 +149,7 @@ class API:
                 print(checker.text)
             else:
                 print("✅ Job updated successfully")
-            
-            #######evergreenAgent.testRun()
-
-             ## contents needs to be the logs when i get them
-        # takes in an instance of ollama??
-            #for job in jobs
-            # does logic for getting notes off timeline and updating them and putting it into job description
+        
 
 running = True
 testAPI = API(headers)
