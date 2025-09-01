@@ -1,257 +1,478 @@
-// Save DocuSign Envelope PDF to Google Drive under Employee/EmployeeName folder
- function saveEnvelopePdfToDrive(envelopeId, employeeName) {
-   const accessToken = generateJWTToken();
-   if (!accessToken) {
-     Logger.log('JWT token creation failed');
-     return null;
-   }
-   // 1. Find or create the root Employee folder
-   let employeeRoot;
-   const folders = DriveApp.getFoldersByName('Evergreen');
-   if (folders.hasNext()) {
-     employeeRoot = folders.next();
-   } else {
-     employeeRoot = DriveApp.createFolder('Evergreen');
-   }
-    //2. Find or create the employee's name folder
-   let empFolder;
-   const empFolders = employeeRoot.getFoldersByName(employeeName);
-   if (empFolders.hasNext()) {
-     empFolder = empFolders.next();
-   } else {
-     empFolder = employeeRoot.createFolder(employeeName);
-   }
-   // 3. Download and save the PDF
-   const url = `${DOCUSIGN_CONFIG.basePath}/v2.1/accounts/${DOCUSIGN_CONFIG.accountId}/envelopes/${envelopeId}/documents/combined`;
-   const response = UrlFetchApp.fetch(url, {
-     method: 'GET',
-     headers: {
-       'Authorization': `Bearer ${accessToken}`,
-       'Accept': 'application/pdf'
-     }
-   });
-   if (response.getResponseCode() === 200) {
-     const blob = response.getBlob().setName(employeeName + '_signed.pdf');
-     const file = empFolder.createFile(blob);
-     Logger.log('PDF saved: ' + file.getUrl());
-     return file.getUrl();
-   } else {
-     Logger.log('PDF download failed: ' + response.getContentText());
-     return null;
-   }
- }
- // Only save when DocuSign Envelope status is complete
- /*
- @OnlyCurrentDoc
- */
- function myPermissions() {
- let ss = SpreadsheetApp.getActiveSpreadsheet();
- }
+/***** Evergreen + DocuSign (Latest Integrated Version) ************************************
+ * ✅ Core Features
+ *  - Sheet input → Send DocuSign template (recommended: installable onEdit trigger)
+ *  - Webhook (doPost) receive → ENVID match, update status + save PDF to Drive/Evergreen/EmployeeName folder
+ *  - If webhook ENVID match fails: backfill ENVID by matching recipient email, then process
+ *
+ * ✅ Stability Points
+ *  - getAccessToken(): JWT→AccessToken cached for 55 minutes
+ *  - generateJWTToken(): Enhanced error messages
+ *  - All UrlFetch use muteHttpExceptions:true (log response body)
+ *  - WebhookLog sheet logs RAW/PARSED/MATCHED/BACKFILLED_BY_EMAIL/NOT_FOUND and more
+ *
+ * ⚠️ Prerequisites
+ *  1) appsscript.json OAuth scopes:
+ *     - external_request, scriptapp, drive, spreadsheets
+ *  2) WebApp deployment: "Execute as me / Anyone (anonymous)" (for DocuSign Connect)
+ *  3) Sheet name: SHEET_NAME = 'NewEmployee'
+ *  4) DocuSign template RoleName assumed to be 'Signer' (fields: Full Name, Email, etc.)
+ *********************************************************************/
+
+/*
+@OnlyCurrentDoc
+*/
+function myPermissions() {
+  // Dummy for permission approval
+  SpreadsheetApp.getActiveSpreadsheet();
+}
+
+/* ========================= DocuSign Config ========================= */
+
 const DOCUSIGN_CONFIG = {
-   integrationKey: '55b012c6-e799-4329-b869-fe0cc4eb009f',
-   userId: '617fc1cf-ab2d-4a3b-9c8a-136e79e9effb',
-   privateKey: `-----BEGIN PRIVATE KEY-----
- MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCmc3iKias/P2H5
- jSe4igQcF4aNOg9sGDa2qwdrNyFiXsfndBZlDDnklXyC7f4qCh2f6wdGD1gOKUHV
- oxjOM7IwoamgzON7N+ycLaHRZ8Q+9LuiehRH+wfxmtdKrNUqclqM/PmU8/RApjLS
- 3O9ikmlLAaNKbN4aE1omHzPUDNM7peieHxyZVVw1sLxFLPKinwBgKdcdJaLARo8s
- dOX+FuFYi1aWhKQ0PA9MYLRH2jq2oYtQkhqAg3nxECPVPXSV86xQ70C1ggIvvuEc
- a7aNoXc1ws6tUWpCXp7m29Iv+3tcmu4acN1bkll0MFDMAR2T/TgdwRwfG2kZYwIO
- 0uAGVjYbAgMBAAECggEAE/fKQCRfzMiXwk4ys6qq74vK8mpCq18EQUmnLC+C68Af
- Dx8YCKs8zrU4KKTQVs672xFg4AC7OYethCl6slH1UGw0YzvxFjkRQ3Md9HcUTdEi
- KU2n3TK6Mzu2FBlDwUHSpxM6Bap2ZMMLWcxzU0npI7xgkG8a/dnQeL5Jg2i+dmsx
- Jw6X969v7lQlkCKomTbGIrukK6J0zK8TcsBA15+bdbQ/Bac3h4wI3/HVGj1GxKXu
- GUyYZLg1U3Cvdw3lOUOchz/bNHWgoUp8sOr3cTRoazqDoTidblmRgJZV6zkJrwTz
- 53XlR/Xeyurv0ghoPP7rxpbjJ6eRktiEoOIqTgVsMQKBgQDcxMggBIxTiOnXqeu/
- qTlIRTp+Pi6thVEcSv7WJfUs4FKwhJGS3CfcIimYrgSVQhJSuwah7A4IKvV5ENNC
- 9Mv6OBMmfAovuZCMYZ790ii2UQMd0SaIx8Gj6KXWPLJbsbcZpfFuarRbO7DAI55Q
- fegA10/GpT0UN5FCR+c1q0XyTQKBgQDBA5z1/qFSNPKHeIllpPPnmKFddAL92saO
- PPggY73V5nwXx2AcY+Fj0A+9PBwTti5btfQiYP3gXWKp/oaUH5jztqQli7EYX86q
- UjkCk57+QGmBMsYMbdEE0lKv5o4wqbJvshxr8yySi8zHAROaLeFaQyo6PKECrtMi
- Q1hyq03uBwKBgGjfIaH0ByT3eP31vgOBw7BNEog9ybasCefCyGO6DEmRFja8Atsc
- seKkZ9YbdBnjFQkvxurMU64Vmh40m+bGms72LEKv0bbyE3RcO0afuq9AtJZJcGCx
- Y48VSRIIK0HbnfsVFSc6kQp1xHTBdscNyFP98+uNOwKLkvlFZtPb1JJRAoGARC9y
- k7SQaOorg5Ahebb8MyTIXKtPIz7WRglj3o1d0uLJk9zrJxxh01D9Pmytvojtd5if
- 1kVNaqWS5Vr1T/6Zmf87ncfrmCDAcYr6eN6NnGRE4U9+h4WEAaALdfiM4sQQNUVG
- pRwS8vJQNT08H4t1wN1ZXZlth/UawU/pPxklPqECgYBxVCucoFZBz9ypXy4Ac9Nz
- G9724lCftrplhGN5W5k/h3lW8Hci9Dp1twoSnCw7uFOAq63gxMrEEWYTzcrWqX5J
- YmrgZJ+c+exx979Xqiv2GofWsyFuuq0b7Kwj3YbOk/Q+iLD5smys5A2b3K9hFp3E
- qyjo/qSMvrZ6dW4tgWrpZw==
- -----END PRIVATE KEY-----`,
-   basePath: 'https:demo.docusign.net/restapi',
-   accountId: 'ab74b31f-b771-488c-a959-1196053757e5'
- };
+  integrationKey: 'be5a7354-de60-476c-af4e-1a81f485163d',   // Integration Key (Client ID)
+  userId:        '54cfdc04-afa7-41ce-a40d-9f4bf5ee8c79',    // User ID (GUID)
+  basePath:      'https://demo.docusign.net/restapi',       // Demo REST API
+  accountId:     '5327da65-5be7-47af-a1b1-ceb70dcf068f',    // API Account ID
+  // PKCS#8 (-----BEGIN PRIVATE KEY-----) format private key
+  privateKey: `-----BEGIN PRIVATE KEY-----
+  ...existing key...
+  -----END PRIVATE KEY-----`
+};
+// Evergreen root folder ID (string between /folders/ and ? in the URL)
+const EVERGREEN_FOLDER_ID = '1FP_pzHPBX1M-Jm7captuNeMgWwPFpS2w';
 
- const SHEET_NAME = 'NewEmployee';
- const COL = { NAME: 1, EMAIL: 2, DEPT: 3, STATUS: 4, ENVID: 5, TIME: 6, ERROR: 7 };
+const SHEET_NAME = 'NewEmployee';
+const COL = { NAME: 1, EMAIL: 2, DEPT: 3, STATUS: 4, ENVID: 5, TIME: 6, ERROR: 7 };
 
-// Main trigger function (onEdit)
- function onEdit(e) {
-   const sheet = e.source.getActiveSheet();
-   if (sheet.getName() !== SHEET_NAME) return;
-   const row = e.range.getRow();
-   if (row <= 1) return;
-   processRow(sheet, row);
- }
+/* ========================= Token Cache/Generation ========================= */
 
-//  Automatically process Pending status (can also be run manually)
- function processPendingEmployees() {
-   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-   const data = sheet.getDataRange().getValues();
-   for (let i = 1; i < data.length; i++) {
-     const row = i + 1;
-     const name = data[i][COL.NAME - 1];
-     const email = data[i][COL.EMAIL - 1];
-     const dept = data[i][COL.DEPT - 1];
-     let status = data[i][COL.STATUS - 1];
-     if (name && email && dept && !status) {
-       sheet.getRange(row, COL.STATUS).setValue('Pending');
-       status = 'Pending';
-     }
-     if (status === 'Pending') {
-       processRow(sheet, row);
-       Utilities.sleep(2000);
-     }
-      // Automatically check for completed signature and save
-     if (status === 'Sent') {
-       const envelopeId = sheet.getRange(row, COL.ENVID).getValue();
-       if (envelopeId) {
-         const accessToken = generateJWTToken();
-         if (accessToken) {
-           const url = `${DOCUSIGN_CONFIG.basePath}/v2.1/accounts/${DOCUSIGN_CONFIG.accountId}/envelopes/${envelopeId}`;
-           const response = UrlFetchApp.fetch(url, {
-             method: 'GET',
-             headers: {
-               'Authorization': `Bearer ${accessToken}`,
-               'Accept': 'application/json'
-             }
-           });
-           if (response.getResponseCode() === 200) {
-             const result = JSON.parse(response.getContentText());
-             if (result.status === 'completed') {
-               sheet.getRange(row, COL.STATUS).setValue('Complete');
-                //Save PDF to Google Drive
-               const name = sheet.getRange(row, COL.NAME).getValue();
-               saveEnvelopePdfToDrive(envelopeId, name);
-             }
-           }
-         }
-       }
-     }
-   }
- }
+// 55 minute cache
+function getAccessToken() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('docusign_access_token');
+  if (hit) return hit;
 
-  //Process a single row
- function processRow(sheet, row) {
-   if (!sheet) {
-     Logger.log('processRow: sheet is undefined!');
-     return;
-   }
-   const name = sheet.getRange(row, COL.NAME).getValue();
-   const email = sheet.getRange(row, COL.EMAIL).getValue();
-   const dept = sheet.getRange(row, COL.DEPT).getValue();
-   try {
-      //Pre-generate JWT token
-     const accessToken = generateJWTToken();
-      if (!accessToken) {
-        sheet.getRange(row, COL.STATUS).setValue('Error');
-        sheet.getRange(row, COL.ERROR).setValue('JWT token creation failed');
-        return;
+  const res = generateJWTToken(true);
+  if (!res || !res.accessToken) {
+    throw new Error('JWT exchange failed: ' + (res && res.errorDetail ? res.errorDetail : 'unknown'));
+  }
+  cache.put('docusign_access_token', res.accessToken, 55 * 60);
+  return res.accessToken;
+}
+
+// JWT generation + exchange
+function generateJWTToken(returnDetail) {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + 3600; // 1 hour
+    const header = { typ: 'JWT', alg: 'RS256' };
+    const payload = {
+      iss: DOCUSIGN_CONFIG.integrationKey,
+      sub: DOCUSIGN_CONFIG.userId,
+      aud: 'account-d.docusign.com',
+      iat: now, exp: exp,
+      scope: 'signature impersonation'
+    };
+
+    const headerB64  = Utilities.base64EncodeWebSafe(JSON.stringify(header)).replace(/=+$/,'');
+    const payloadB64 = Utilities.base64EncodeWebSafe(JSON.stringify(payload)).replace(/=+$/,'');
+    const signData   = `${headerB64}.${payloadB64}`;
+
+    const pemKey = (DOCUSIGN_CONFIG.privateKey || '').replace(/\r\n/g, '\n').trim();
+    if (!/^-----BEGIN PRIVATE KEY-----\n[\s\S]+\n-----END PRIVATE KEY-----$/.test(pemKey)) {
+      const msg = 'Private Key is not in PKCS#8 format.';
+      return returnDetail ? { accessToken: null, errorDetail: msg } : null;
+    }
+
+    const signature = Utilities.base64EncodeWebSafe(
+      Utilities.computeRsaSha256Signature(signData, pemKey)
+    ).replace(/=+$/,'');
+
+    const jwt = `${headerB64}.${payloadB64}.${signature}`;
+
+    const tokenResponse = UrlFetchApp.fetch('https://account-d.docusign.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      payload: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+      muteHttpExceptions: true
+    });
+
+    if (tokenResponse.getResponseCode() === 200) {
+      const tokenData = JSON.parse(tokenResponse.getContentText());
+      return returnDetail ? { accessToken: tokenData.access_token, errorDetail: '' } : tokenData.access_token;
+    } else {
+      const body = tokenResponse.getContentText();
+      return returnDetail ? { accessToken: null, errorDetail: body } : null;
+    }
+  } catch (error) {
+    const msg = error && error.message ? error.message : String(error);
+    return returnDetail ? { accessToken: null, errorDetail: msg } : null;
+  }
+}
+
+/* ========================= Envelope Send/Status/Save ========================= */
+
+// Send template (RoleName 'Signer', auto-merge Full Name/Email)
+function sendDocuSignEnvelopeWithToken(name, email, department, accessToken) {
+  try {
+    const envelopeData = {
+      templateId: '71704360-d1ec-49d4-94fc-05dcf1a81225',
+      templateRoles: [
+        { roleName: 'Signer', name: name, email: email }
+      ],
+      status: 'sent'
+    };
+
+    const url = `${DOCUSIGN_CONFIG.basePath}/v2.1/accounts/${DOCUSIGN_CONFIG.accountId}/envelopes`;
+    const response = UrlFetchApp.fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      payload: JSON.stringify(envelopeData),
+      muteHttpExceptions: true
+    });
+
+    Logger.log('DocuSign API response: ' + response.getContentText());
+    if (response.getResponseCode() === 201) {
+      const result = JSON.parse(response.getContentText());
+      return { success: true, envelopeId: result.envelopeId };
+    }
+    return { success: false, error: response.getContentText() };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+function saveEnvelopePdfToDrive(envelopeId, employeeName) {
+  var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('WebhookLog');
+  if (!logSheet) logSheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet('WebhookLog');
+
+  if (!envelopeId || String(envelopeId).trim() === '') {
+    logSheet.appendRow([new Date(), 'SAVE_FAIL', 'NO_ENVELOPE_ID', employeeName]);
+    return null;
+  }
+
+  let accessToken;
+  try {
+    accessToken = getAccessToken();
+  } catch (e) {
+    logSheet.appendRow([new Date(), 'SAVE_FAIL', 'TOKEN_ERROR', (e && e.message) || String(e)]);
+    return null;
+  }
+
+  // 1) Evergreen root folder (fixed by ID)
+  let employeeRoot;
+  try {
+    employeeRoot = DriveApp.getFolderById(EVERGREEN_FOLDER_ID);
+  } catch (e) {
+    logSheet.appendRow([new Date(), 'SAVE_FAIL', 'INVALID_FOLDER_ID', (e && e.message) || String(e)]);
+    return null;
+  }
+
+  // 2) Employee name folder (exactly employeeName)
+  let empFolder;
+  const it = employeeRoot.getFoldersByName(employeeName);
+  empFolder = it.hasNext() ? it.next() : employeeRoot.createFolder(employeeName);
+
+  // 3) Download DocuSign combined PDF
+  const url = `${DOCUSIGN_CONFIG.basePath}/v2.1/accounts/${DOCUSIGN_CONFIG.accountId}/envelopes/${encodeURIComponent(envelopeId)}/documents/combined`;
+  const res = UrlFetchApp.fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/pdf'
+    },
+    muteHttpExceptions: true
+  });
+
+  const code = res.getResponseCode();
+  if (code === 200) {
+    const blob = res.getBlob().setName(`${employeeName}_signed.pdf`);
+    const file = empFolder.createFile(blob);
+    logSheet.appendRow([new Date(), 'SAVE_OK', employeeName, envelopeId, file.getUrl()]);
+    return file.getUrl();
+  } else {
+    // Log failure reason (HTTP code + body)
+    logSheet.appendRow([new Date(), 'SAVE_FAIL', `HTTP_${code}`, envelopeId, res.getContentText()]);
+    return null;
+  }
+}
+
+// Status check (ENVID guard)
+function getEnvelopeStatus(envelopeId) {
+  if (!envelopeId || String(envelopeId).trim() === '') {
+    throw new Error('envelopeId is empty.');
+  }
+  const accessToken = getAccessToken();
+  const url = `${DOCUSIGN_CONFIG.basePath}/v2.1/accounts/${DOCUSIGN_CONFIG.accountId}/envelopes/${encodeURIComponent(envelopeId)}`;
+  const r = UrlFetchApp.fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/json'
+    },
+    muteHttpExceptions: true
+  });
+  const code = r.getResponseCode();
+  if (code !== 200) {
+    throw new Error(`Status check failed (${code}): ${r.getContentText()}`);
+  }
+  return JSON.parse(r.getContentText());
+}
+/* ========================= Sheet Process ========================= */
+
+// (Note) Simple onEdit(e) has limited external call permissions → recommend connecting the function below to an installable onEdit trigger
+function onEdit(e) { /* Not used (installable trigger should connect to processPendingEmployees) */ }
+
+// Pending → Send → After Sent, periodically check status (with webhook)
+function processPendingEmployees() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const data  = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    const row   = i + 1;
+    const name  = data[i][COL.NAME  - 1];
+    const email = data[i][COL.EMAIL - 1];
+    const dept  = data[i][COL.DEPT  - 1];
+    let status  = data[i][COL.STATUS- 1];
+    const envid = data[i][COL.ENVID - 1];
+
+    if (envid || ["Sent","Complete","Error","Processing..."].includes(status)) continue;
+
+    if (name && email && dept && !status) {
+      sheet.getRange(row, COL.STATUS).setValue('Pending');
+      status = 'Pending';
+    }
+
+    if (status === 'Pending') {
+      processRow(sheet, row);
+      Utilities.sleep(1500);
+    }
+
+    const currentStatus = sheet.getRange(row, COL.STATUS).getValue();
+    if (currentStatus === 'Sent') {
+      const envelopeId = sheet.getRange(row, COL.ENVID).getValue();
+      if (envelopeId) {
+        try {
+          const st = getEnvelopeStatus(envelopeId);
+          if (st.status === 'completed') {
+            sheet.getRange(row, COL.STATUS).setValue('Complete');
+            saveEnvelopePdfToDrive(envelopeId, name);
+          } else if (st.status && st.status !== 'sent') {
+            sheet.getRange(row, COL.STATUS).setValue(st.status);
+          }
+        } catch (e) {
+          sheet.getRange(row, COL.ERROR).setValue('Status check failed: ' + (e.message || String(e)));
+        }
       }
-     sheet.getRange(row, COL.STATUS).setValue('Processing...');
-     const result = sendDocuSignEnvelopeWithToken(name, email, dept, accessToken);
-     if (result.success) {
-       sheet.getRange(row, COL.STATUS).setValue('Sent');
-       sheet.getRange(row, COL.ENVID).setValue(result.envelopeId);
-       sheet.getRange(row, COL.TIME).setValue(new Date().toLocaleString());
-       sheet.getRange(row, COL.ERROR).setValue('');
-     }
-   } catch (err) {
-     sheet.getRange(row, COL.STATUS).setValue('Error');
-     sheet.getRange(row, COL.ERROR).setValue(err.message);
-   }
- }
-  //Send DocuSign Envelope (with token as argument)
- function sendDocuSignEnvelopeWithToken(name, email, department, accessToken) {
-   try {
-     Logger.log('JWT token created: ' + accessToken);
-      //Create Envelope based on DocuSign template
-     const envelopeData = {
-       templateId: '88a7456c-dec9-4468-be8d-ca30db792a86',  //Your template ID
-       templateRoles: [
-         {
-           email: email,
-           name: name,
-           roleName: 'Signer' // Role name defined in template
-         }
-       ],
-       status: 'sent'
-     };
-     const url = `${DOCUSIGN_CONFIG.basePath}/v2.1/accounts/${DOCUSIGN_CONFIG.accountId}/envelopes`;
-     const response = UrlFetchApp.fetch(url, {
-       method: 'POST',
-       headers: {
-         'Authorization': `Bearer ${accessToken}`,
-         'Content-Type': 'application/json',
-         'Accept': 'application/json'
-       },
-       payload: JSON.stringify(envelopeData)
-     });
-     Logger.log('DocuSign API response: ' + response.getContentText());
-     if (response.getResponseCode() === 201) {
-       const result = JSON.parse(response.getContentText());
-       return { success: true, envelopeId: result.envelopeId };
-     } else {
-       return { success: false, error: response.getContentText() };
-     }
-   } catch (error) {
-     Logger.log('DocuSign send error: ' + error);
-     return { success: false, error: error.message };
-   }
- }
+    }
+  }
+}
 
-  //Generate JWT token
- function generateJWTToken() {
-   try {
-     const now = Math.floor(Date.now() / 1000);
-     const exp = now + 6000;
-     const header = { typ: 'JWT', alg: 'RS256' };
-     const payload = {
-       iss: DOCUSIGN_CONFIG.integrationKey,
-       sub: DOCUSIGN_CONFIG.userId,
-       aud: 'account-d.docusign.com',
-       iat: now,
-       exp: exp,
-       scope: 'signature impersonation'
-     };
-     const headerB64 = Utilities.base64EncodeWebSafe(JSON.stringify(header)).replace(/=+$/, '');
-     const payloadB64 = Utilities.base64EncodeWebSafe(JSON.stringify(payload)).replace(/=+$/, '');
-     const signData = `${headerB64}.${payloadB64}`;
-     const pemKey = DOCUSIGN_CONFIG.privateKey;
-     const signature = Utilities.base64EncodeWebSafe(
-       Utilities.computeRsaSha256Signature(signData, pemKey)
-     ).replace(/=+$/, '');
-     const jwt = `${headerB64}.${payloadB64}.${signature}`;
-     const tokenResponse = UrlFetchApp.fetch('https:account-d.docusign.com/oauth/token', {
-       method: 'POST',
-       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-       payload: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
-     });
-     Logger.log('DocuSign token response: ' + tokenResponse.getContentText());
-     if (tokenResponse.getResponseCode() === 200) {
-       const tokenData = JSON.parse(tokenResponse.getContentText());
-       return tokenData.access_token;
-     } else {
-       return null;
-     }
-   } catch (error) {
-     Logger.log('JWT token creation error: ' + error);
-     return null;
-   }
- }
+function processRow(sheet, row) {
+  if (!sheet) return;
 
+  const name   = sheet.getRange(row, COL.NAME ).getValue();
+  const email  = sheet.getRange(row, COL.EMAIL).getValue();
+  const dept   = sheet.getRange(row, COL.DEPT ).getValue();
+  const status = sheet.getRange(row, COL.STATUS).getValue();
+  const envid  = sheet.getRange(row, COL.ENVID ).getValue();
+  if (envid || ["Sent","Complete","Error","Processing..."].includes(status)) return;
 
-// Manual execution function (process all Pending)
- function testProcess() {
-   processPendingEmployees();
- }
+  try {
+    let accessToken;
+    try {
+      accessToken = getAccessToken();
+    } catch (e) {
+      sheet.getRange(row, COL.STATUS).setValue('Error');
+      sheet.getRange(row, COL.ERROR ).setValue('JWT token creation failed: ' + (e && e.message ? e.message : String(e)));
+      return;
+    }
+
+    sheet.getRange(row, COL.STATUS).setValue('Processing...');
+    const result = sendDocuSignEnvelopeWithToken(name, email, dept, accessToken);
+
+    if (result.success) {
+      sheet.getRange(row, COL.STATUS).setValue('Sent');
+      sheet.getRange(row, COL.ENVID ).setValue(result.envelopeId);
+      sheet.getRange(row, COL.TIME  ).setValue(new Date().toLocaleString());
+      sheet.getRange(row, COL.ERROR ).setValue('');
+      Logger.log('ENVID recorded row ' + row + ' : ' + result.envelopeId);
+    } else {
+      sheet.getRange(row, COL.STATUS).setValue('Error');
+      sheet.getRange(row, COL.ERROR ).setValue('DocuSign send failed: ' + (result.error || ''));
+    }
+  } catch (err) {
+    sheet.getRange(row, COL.STATUS).setValue('Error');
+    sheet.getRange(row, COL.ERROR ).setValue(err && err.stack ? err.stack : (err && err.message ? err.message : 'Unknown error'));
+  }
+}
+
+/* ========================= Webhook (Connect) ========================= */
+
+// Helper: Get first signer's email/name from envelope
+function _getFirstSignerInfo(envelopeId) {
+  try {
+    const accessToken = getAccessToken();
+    const url = `${DOCUSIGN_CONFIG.basePath}/v2.1/accounts/${DOCUSIGN_CONFIG.accountId}/envelopes/${encodeURIComponent(envelopeId)}/recipients`;
+    const r = UrlFetchApp.fetch(url, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' },
+      muteHttpExceptions: true
+    });
+    if (r.getResponseCode() !== 200) {
+      Logger.log('recipients fetch failed: ' + r.getContentText());
+      return null;
+    }
+    const data = JSON.parse(r.getContentText());
+    const signer = (data.signers && data.signers.length) ? data.signers[0] : null;
+    if (!signer) return null;
+    return { email: (signer.email || '').trim().toLowerCase(), name: signer.name || '' };
+  } catch (e) {
+    Logger.log('_getFirstSignerInfo error: ' + (e && e.message ? e.message : String(e)));
+    return null;
+  }
+}
+// Webhook endpoint (replacement)
+function doPost(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName('WebhookLog');
+    if (!logSheet) logSheet = ss.insertSheet('WebhookLog');
+
+    // 0) RAW log
+    var rawBody = e && e.postData ? e.postData.contents : 'NO_BODY';
+    logSheet.appendRow([new Date(), 'RAW', rawBody]);
+
+    // 1) Parse
+    var data = {};
+    try {
+      data = e && e.postData ? JSON.parse(e.postData.contents) : {};
+    } catch (parseErr) {
+      logSheet.appendRow([new Date(), 'ERROR', 'JSON_PARSE_FAIL', String(parseErr)]);
+      return ContentService.createTextOutput('Bad JSON');
+    }
+
+    // 2) Extract envelopeId / status
+    var envelopeId =
+      (data.envelopeId) ||
+      (data.data && data.data.envelopeId) ||
+      (data.envelopeSummary && data.envelopeSummary.envelopeId) || '';
+
+    var rawStatus =
+      data.status || data.event ||
+      (data.data && data.data.status) ||
+      (data.envelopeSummary && data.envelopeSummary.status) || '';
+
+    // 3) Normalize status
+    var lowered = String(rawStatus).toLowerCase().trim();
+    var normalized = lowered.replace(/\s+/g, '').replace(/_/g, '-');
+    var isCompleted = (
+      normalized === 'completed' ||
+      normalized === 'complete' ||
+      normalized === 'envelope-completed' ||
+      normalized === 'recipient-completed'
+    );
+
+    logSheet.appendRow([new Date(), 'PARSED', envelopeId, rawStatus]);
+
+    if (!envelopeId || !rawStatus) {
+      logSheet.appendRow([new Date(), 'ERROR', 'Missing envelopeId or status']);
+      return ContentService.createTextOutput('Missing envelopeId or status');
+    }
+
+    // 4) Match in sheet
+    var sheet  = ss.getSheetByName(SHEET_NAME);
+    var values = sheet.getDataRange().getValues();
+    var foundRow = -1;
+    var target = String(envelopeId).trim().toLowerCase();
+
+    // 4-1) First match by ENVID
+    for (var i = 1; i < values.length; i++) {
+      var sheetEnvId = (values[i][COL.ENVID - 1] || '').toString().trim();
+      if (sheetEnvId && sheetEnvId.toLowerCase() === target) {
+        foundRow = i + 1;
+        break;
+      }
+    }
+
+    // 4-2) If not found, backfill by email (latest row with matching email, empty ENVID, and status Sent/Processing/Pending/blank)
+    if (foundRow === -1) {
+      var signerInfo = _getFirstSignerInfo(envelopeId);
+      if (signerInfo && signerInfo.email) {
+        var candidateRow = -1;
+        for (var j = values.length - 1; j >= 1; j--) {
+          var rowEmail  = (values[j][COL.EMAIL - 1] || '').toString().trim().toLowerCase();
+          var rowEnvid  = (values[j][COL.ENVID - 1] || '').toString().trim();
+          var rowStatus = (values[j][COL.STATUS- 1] || '').toString().trim();
+          if (rowEmail === signerInfo.email && !rowEnvid &&
+              ['Sent','Processing...','Pending',''].includes(rowStatus)) {
+            candidateRow = j + 1;
+            break;
+          }
+        }
+        if (candidateRow !== -1) {
+          sheet.getRange(candidateRow, COL.ENVID).setValue(envelopeId); // Backfill ENVID
+          foundRow = candidateRow;
+          logSheet.appendRow([new Date(), 'BACKFILLED_BY_EMAIL', envelopeId, signerInfo.email, 'row', candidateRow]);
+        }
+      }
+    }
+
+    // 5) Process match result (only here: save/update status)
+    if (foundRow !== -1) {
+      if (isCompleted) {
+        sheet.getRange(foundRow, COL.STATUS).setValue('Complete');
+        var empName = sheet.getRange(foundRow, COL.NAME).getValue();
+
+        // Log save attempt/result (for flow tracking)
+        logSheet.appendRow([new Date(), 'SAVE_ATTEMPT', envelopeId, empName]);
+        var fileUrl = saveEnvelopePdfToDrive(envelopeId, empName);
+        logSheet.appendRow([new Date(), 'SAVE_RESULT', envelopeId, empName, fileUrl || 'NO_URL']);
+      } else {
+        sheet.getRange(foundRow, COL.STATUS).setValue(rawStatus);
+      }
+      logSheet.appendRow([new Date(), 'MATCHED', 'row', foundRow]);
+    } else {
+      logSheet.appendRow([new Date(), 'NOT_FOUND', envelopeId, 'no envid match & no email backfill']);
+    }
+
+    return ContentService.createTextOutput('OK');
+  } catch (err) {
+    return ContentService.createTextOutput('Error: ' + (err && err.message ? err.message : String(err)));
+  }
+}
+
+/* ========================= Util/Debug ========================= */
+
+// Manual run (process all Pending)
+function testProcess() {
+  processPendingEmployees();
+}
+
+// Debug single send
+function _debugSendOne() {
+  const res = sendDocuSignEnvelopeWithToken('Test', 'bomul10258034@gmail.com', 'HR', getAccessToken());
+  Logger.log(JSON.stringify(res));
+}
+
+// Create installable onEdit trigger (connects to processPendingEmployees)
+function createEditTrigger() {
+  const ssId = SpreadsheetApp.getActive().getId();
+
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'processPendingEmployees') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+
+  ScriptApp.newTrigger('processPendingEmployees')
+    .forSpreadsheet(ssId)
+    .onEdit()
+    .create();
+
+  Logger.log('Installable onEdit trigger created');
+}
