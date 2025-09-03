@@ -124,7 +124,7 @@ your output may have fewer than two subheading groups or more depending on the j
         if response.status_code == 200:
             data = response.json()
             assistant_message = data['choices'][0]['message']['content']
-            print("💬 Assistant: \n", assistant_message)
+            #print("💬 Assistant: \n", assistant_message)
             return assistant_message
 
             #self.chatHistory.append({"role": "assistant", "content": assistant_message})

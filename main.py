@@ -111,7 +111,8 @@ def get_Job_Logs(ID, JobID):
     response = requests.get(URL, headers=headers)
     res = response.json()
     for note in res:
-        if note.get("Type") == "Customer Note":
+        print(note.get("Type"))
+        if note.get("Type") == "Customer Note" or note.get("Type") == "Work Order Technician Notes":
             return note
 
 class API:
@@ -130,9 +131,12 @@ class API:
 
             content = htmlUtility.strip_html(job.get("Description"))
             if content.startswith("[REWRITE]"):
-                print("skipping job...")
+                print(f"skipping job...({currentID}) REASON: contains [REWRITE TAG]")
                 continue
             result = get_Job_Logs(self.ID, job.get("ID"))
+            if (not result):
+                print(f"{currentID} unable to find a valid work note for job... SKIPPING")
+                continue
             filtered = htmlUtility.strip_html(result.get("Message"))
             editedMessage = evergreenAgent.sendNotes(filtered)
 
