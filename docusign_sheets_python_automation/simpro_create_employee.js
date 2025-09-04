@@ -1,3 +1,4 @@
+// @ts-nocheck
 /***** ==================== Simpro Integration (Final Clean) ==================== ******
  * How it works
  * - Uses API Key (Bearer) auth to call Simpro API v1.0
@@ -14,12 +15,15 @@
  ******************************************************************************/
 
 /** ===== Public: Create employee in Simpro (name/email/opts) ===== */
+// @ts-nocheck
+/***** ==================== Simpro Integration (Final Clean) ==================== *****/
+
 function registerEmployeeInSimpro(name, email, opts) {
   const props  = PropertiesService.getScriptProperties();
   const BASE   = (props.getProperty('SIMPRO_BASE') || '').replace(/\/+$/,'');
   const token  = (props.getProperty('SIMPRO_API_TOKEN') || '').trim();
-  const CID    = String((props.getProperty('SIMPRO_COMPANY_ID') || '').trim());         // ← 590
-  const DEF_CO = parseInt((props.getProperty('SIMPRO_DEFAULT_COMPANY_ID') || '0').trim(), 10); // ← 590
+  const CID    = String((props.getProperty('SIMPRO_COMPANY_ID') || '').trim());
+  const DEF_CO = parseInt((props.getProperty('SIMPRO_DEFAULT_COMPANY_ID') || '0').trim(), 10);
 
   if (!BASE || !token) return { ok:false, error:'Missing SIMPRO_BASE or SIMPRO_API_TOKEN' };
   if (!CID)            return { ok:false, error:'SIMPRO_COMPANY_ID not set' };
@@ -30,15 +34,17 @@ function registerEmployeeInSimpro(name, email, opts) {
 
   const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   const username = (opts && opts.username) || buildUsernameFromName_(name);
-  const password = (opts && opts.password) || 'Password1234!';
+  const password = (opts && opts.password) || 'Evergreen1234!';
 
  const payload = {
   Name: name,
   Position: (opts && opts.position) || '',
   DateOfHire: (opts && opts.dateOfHire) || todayStr,
-  PrimaryContact: { Email: email },
+  PrimaryContact: { 
+    Email: email
+  },
   AccountSetup: { Username: username, Password: password },
-  DefaultCompany: DEF_CO   // ✅ 이것만 필요
+  DefaultCompany: DEF_CO
 };
 
   Logger.log('PAYLOAD=' + JSON.stringify(payload));
@@ -59,30 +65,35 @@ function registerEmployeeInSimpro(name, email, opts) {
 
   const code = resp.getResponseCode();
   const body = resp.getContentText();
+  Logger.log('SIMPRO_RESP_CODE=' + code);
+  Logger.log('SIMPRO_RESP_BODY=' + body);
+
   if (code === 201) {
     const json = safeJson_(body) || {};
     return { ok: true, employeeId: json.ID, username, password };
   }
   return { ok:false, error:`HTTP_${code}: ${body}` };
-}
+} // ⬅️ 이 중괄호가 꼭 필요합니다!
 /** ===== Hook: Call from Sheet row ===== */
 function createSimproEmployeeFromRow_(sheet, row) {
-  var name  = sheet.getRange(row, 1).getValue(); // COL.NAME
-  var email = sheet.getRange(row, 2).getValue(); // COL.EMAIL
-  var dept  = sheet.getRange(row, 3).getValue(); // COL.DEPT
+  var name  = sheet.getRange(row, COL.NAME).getValue();
+  var email = sheet.getRange(row, COL.EMAIL).getValue();
+  var pos   = sheet.getRange(row, COL.POSITION).getValue();
+  var phone = sheet.getRange(row, COL.PHONE).getValue();
+  var start = sheet.getRange(row, COL.STARTDATE).getValue();
 
-  var res = registerEmployeeInSimpro(name, email, { position: dept });
-
-  var STATUS_COL = 4; // COL.STATUS
-  var ERROR_COL  = 7; // COL.ERROR
+  var res = registerEmployeeInSimpro(name, email, {
+    position: pos,
+    phone: normalizePhone_(phone),                 // 아래 3) 참고
+    dateOfHire: start ? Utilities.formatDate(new Date(start), Session.getScriptTimeZone(), 'yyyy-MM-dd') : undefined,
+  });
 
   if (res.ok) {
-    sheet.getRange(row, STATUS_COL).setValue('Registered');
-    return true;
+    sheet.getRange(row, COL.STATUS).setValue('Registered');
   } else {
-    sheet.getRange(row, ERROR_COL).setValue('Simpro reg failed: ' + res.error);
-    return false;
+    sheet.getRange(row, COL.ERROR).setValue('Simpro reg failed: ' + res.error);
   }
+  return !!res.ok;
 }
 
 /* ==================== Helpers ==================== */
@@ -119,16 +130,19 @@ function testSimproAuth_basicListEmployees() {
 
 function quickTest_CreateSimproFromRow() {
   const sheet = SpreadsheetApp.getActive().getSheetByName('NewEmployee');
-  const row = 2; // 테스트 행 번호
-  const ok = createSimproEmployeeFromRow_(sheet, row);
-  Logger.log('Simpro create: ' + ok);
+  const row = 2; // 테스트할 행
+  const name  = sheet.getRange(row, COL.NAME).getValue();
+  const email = sheet.getRange(row, COL.EMAIL).getValue();
+  const pos   = sheet.getRange(row, COL.POSITION).getValue();
+  const phone = sheet.getRange(row, COL.PHONE).getValue();
+  const start = sheet.getRange(row, COL.STARTDATE).getValue();
+
+  const res = registerEmployeeInSimpro(name, email, {
+    position: pos,
+    phone: normalizePhone_(phone),
+    dateOfHire: start ? Utilities.formatDate(new Date(start), Session.getScriptTimeZone(), 'yyyy-MM-dd') : undefined,
+  });
+
+  Logger.log('RES=' + JSON.stringify(res));
 }
 
-function testDirectCreate() {
-  const res = registerEmployeeInSimpro(
-    'Jane Test',
-    'jane.test+1@example.com',
-    { position: 'Electrical' }
-  );
-  Logger.log(JSON.stringify(res));
-}
