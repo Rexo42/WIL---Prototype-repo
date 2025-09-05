@@ -102,21 +102,14 @@ def test_Requests(ID): #function for running all test API requests and prints ou
     del company, jobList, customers
 
 def get_Job_Logs(ID, JobID):
-    params = {
-    "search": "all",
-    "columns": "Type,Message,Date"
-}
-    relevantNotes = []
     URL = BASE_URL+"companies/"+str(ID)+"/jobs/"+str(JobID)+"/timelines/"
-    #print(demo.status_code)
-    ###
-
-
-    #print(URL)
     response = requests.get(URL, headers=headers)
     res = response.json()
     for note in res:
-        if note.get("Type") == "Customer Note":
+        print(note.get("Type"))
+        if note.get("Type") == "Customer Note" or note.get("Type") == "Work Order Technician Notes":
+            if note.get("Type") == "Work Order Technician Notes":
+                print(note)
             return note
 
 class API:
@@ -127,16 +120,28 @@ class API:
     def updateJobs(self, evergreenAgent):
         jobData = get_Jobs(self.ID)
         for job in jobData:
-            print(json.dumps(job, indent=2))
-            print(job.get("ID"))
+            currentID = job.get("ID")
+            URL = BASE_URL + 'companies/'+str(self.ID)+'/jobs/'+str(currentID)
+            data = requests.get(URL, headers=headers).json()
+            if (data.get("Stage") == "Invoiced" or data.get("Stage")== "Complete"):
+                continue
+
             content = htmlUtility.strip_html(job.get("Description"))
             if content.startswith("[REWRITE]"):
-                print("skipping job...")
+                print(f"skipping job...({currentID}) REASON: contains [REWRITE TAG]")
                 continue
             result = get_Job_Logs(self.ID, job.get("ID"))
-            print(json.dumps(result, indent=2))
+            if (not result):
+                print(f"skipping job... ({currentID}) REASON: no valid job notes found")
+                continue
             filtered = htmlUtility.strip_html(result.get("Message"))
             editedMessage = evergreenAgent.sendNotes(filtered)
+            # IF CONTAINS REWRITE F THEN ITS INCOMPLETE AND SKIP
+            # ELSE IF CONTAINS JUST REWRITE AND NO F THEN MOVE IT TO COMPLETE
+            # if ("[REWRITE] F" in editedMessage and !()):
+
+            
+
 
             payload = {
             "Description" : editedMessage
@@ -151,13 +156,7 @@ class API:
                 print(checker.text)
             else:
                 print("✅ Job updated successfully")
-            
-            #######evergreenAgent.testRun()
-
-             ## contents needs to be the logs when i get them
-        # takes in an instance of ollama??
-            #for job in jobs
-            # does logic for getting notes off timeline and updating them and putting it into job description
+        
 
 running = True
 testAPI = API(headers)
