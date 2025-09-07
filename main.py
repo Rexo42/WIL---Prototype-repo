@@ -8,9 +8,9 @@ import os
 
 load_dotenv()
 ### TODO
-#   additional functionality to mark jobs as completed or flag them for review if deemed potentially incomplete
-#       error handling ie: no work notes just skip over/leave
-#
+#   Only check completed Jobs DONE!!!!
+#   ALLOW MULTIPLE NOTE SUPPORT, IE TWO DIFFERENT TECHNICIAN NOTES
+    #IF A JOB IS DEEMED INCOMPLETE MOVE IT TO PENDING
 ###
 ACCESS_TOKEN = os.getenv("API_KEY_Simpro")
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
@@ -69,6 +69,13 @@ def remove_Customer(ID, GivenName, FamilyName): #removes a customer
             URL += "individuals/"+str(customer.get("ID"))
             requests.delete(URL, headers=headers)
 
+def updateJob(ID, jobID, stageID):
+    URL = BASE_URL+"companies/"+str(ID)+'/jobs/'+str(jobID)
+    print(URL)
+    payload = {"Stage": stageID}
+    return requests.patch(URL, headers=headers, json=payload)
+
+
 ### TESTING ###
 def test_Requests(ID): #function for running all test API requests and prints out resulting data
     company = get_Company()
@@ -101,17 +108,24 @@ def test_Requests(ID): #function for running all test API requests and prints ou
 
     del company, jobList, customers
 
+###
+
+
 def get_Job_Logs(ID, JobID):
     URL = BASE_URL+"companies/"+str(ID)+"/jobs/"+str(JobID)+"/timelines/"
     response = requests.get(URL, headers=headers)
     res = response.json()
+    valid_Notes = []
     for note in res:
         print(note.get("Type"))
-        if note.get("Type") == "Customer Note" or note.get("Type") == "Work Order Technician Notes":
-            if note.get("Type") == "Work Order Technician Notes":
-                print(note)
-            return note
-
+        #print(note.get("Type"))
+        if note.get("Type") == "Work Order Technician Notes" or note.get("Type") == "Customer Note":
+            #print(note.get("Type"))
+            #print("found note!!!")
+            #return note
+            valid_Notes.append(note)
+            #print(note.get("message"))
+    return valid_Notes  
 class API:
     def __init__(self, headers):
         self.ID = get_Company().get("ID")
@@ -123,39 +137,56 @@ class API:
             currentID = job.get("ID")
             URL = BASE_URL + 'companies/'+str(self.ID)+'/jobs/'+str(currentID)
             data = requests.get(URL, headers=headers).json()
-            if (data.get("Stage") == "Invoiced" or data.get("Stage")== "Complete"):
+            if (data.get("Stage") != "Complete"):
                 continue
 
             content = htmlUtility.strip_html(job.get("Description"))
             if content.startswith("[REWRITE]"):
-                print(f"skipping job...({currentID}) REASON: contains [REWRITE TAG]")
+                print(f"skipping job...(#{currentID}) REASON: contains [REWRITE TAG]")
                 continue
             result = get_Job_Logs(self.ID, job.get("ID"))
             if (not result):
-                print(f"skipping job... ({currentID}) REASON: no valid job notes found")
+                print(f"skipping job... (#{currentID}) REASON: no valid job notes found")
                 continue
-            filtered = htmlUtility.strip_html(result.get("Message"))
-            editedMessage = evergreenAgent.sendNotes(filtered)
+            text = ""
+            for note in result:
+                #print("PRINTING NOTE CONTENTS")
+                #print(note.get("Message"))
+                #print('/n')
+                text += htmlUtility.strip_html(note.get("Message"))
+                text += '\n'
+            #print(text)
+            print(f"editing job #{currentID}...")
+            # complete = False
+            filtered = htmlUtility.strip_html(text)
+            editedMessage = evergreenAgent.sendNotes(text)
+            # if (["REWRITE F" not in editedMessage]):
+            #     complete = True
+
+
+
+            #check = updateJob(self.ID, currentID, "Complete", 11)
+            #print(check)
             # IF CONTAINS REWRITE F THEN ITS INCOMPLETE AND SKIP
             # ELSE IF CONTAINS JUST REWRITE AND NO F THEN MOVE IT TO COMPLETE
             # if ("[REWRITE] F" in editedMessage and !()):
-
-            
-
-
             payload = {
             "Description" : editedMessage
             }
 
             updateURL = BASE_URL+"companies/"+str(self.ID)+"/jobs/"+str(job.get("ID"))
-    
             checker = requests.patch(updateURL, headers=headers, json=payload)
-            print(f"PATCH status: {checker.status_code}")
+            # if complete:
+            #     print("job deemed complete, updating status...")
+            #     updateJob(self.ID, currentID, "Complete")
+
+
+            #print(f"PATCH status: {checker.status_code}")
             if checker.status_code not in (200, 204):
                 print("❌ Error updating job:")
                 print(checker.text)
             else:
-                print("✅ Job updated successfully")
+                print(f"✅ Job #{currentID} updated successfully")
         
 
 running = True
