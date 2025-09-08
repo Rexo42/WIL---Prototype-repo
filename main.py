@@ -117,7 +117,7 @@ def get_Job_Logs(ID, JobID):
     res = response.json()
     valid_Notes = []
     for note in res:
-        print(note.get("Type"))
+        #print(note.get("Type"))
         #print(note.get("Type"))
         if note.get("Type") == "Work Order Technician Notes" or note.get("Type") == "Customer Note":
             #print(note.get("Type"))
