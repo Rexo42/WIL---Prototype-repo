@@ -23,7 +23,9 @@ Only use the information provided in the notes. Do not add extra commentary, ass
 - <strong> for section headings
 - <ul> and <li> for bullet points
 - <br> for inline line breaks
-your output may have fewer than two subheading groups or more depending on the job notes given. in the below template, where it says "[REWRITE]" I instead want you to make it "[REWRITE] F" if you determine the job is incomplete or requires more attention by the company
+your output may have fewer than two subheading groups or more depending on the job notes given. in the below template, where it says "[REWRITE]" I instead want you to make it "[REWRITE] F" if you determine the job is incomplete or requires more attention by the company after all relevant job notes have been read (there may be more than one).
+If there is any indiciation that the job has been completed do not include the "F".
+keep note of the date, if a note of the latest date indicates the job has been finished, mark it as finished not with the F tag.
 ---
 
 🧱 Structure your output *exactly like this*:
@@ -70,6 +72,7 @@ your output may have fewer than two subheading groups or more depending on the j
 - `[REWRITE]` is included in the first <div>
 - Each task is in its own `<li>` inside the `<ul>`
 - No extra commentary or invented details
+- if it looks like two seperate work notes have been given use the template above to ensure all work notes have their own sections
 """
         self.initPrompt2 = """
         the following text is an example of job notes that you should make the ones after this look like. Donot reply to this but every prompt after do reply even if they look similar to the following:
@@ -115,11 +118,11 @@ your output may have fewer than two subheading groups or more depending on the j
         }
 
         
-        print("⏳ Sending request...")
+        print("⏳ Tidying up Job Notes...")
         response = requests.post(self.URL, headers=headers ,json=prompt_payload, timeout=300)
 
         self.chatHistory.pop(-1)
-        print("✅ Response received.")
+        #print("✅ Response received.")
 
         if response.status_code == 200:
             data = response.json()
