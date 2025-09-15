@@ -158,11 +158,14 @@ class API:
             #print(text)
             print(f"editing job #{currentID}...")
             # complete = False
-            filtered = htmlUtility.strip_html(text)
             editedMessage = evergreenAgent.sendNotes(text)
+
+            #filtered = htmlUtility.strip_html(editedMessage)
+            editedJobs = []
+            if ("[REWRITE] INCOMPLETE" in editedMessage):
+                editedJobs.append(currentID)
             # if (["REWRITE F" not in editedMessage]):
             #     complete = True
-
 
 
             #check = updateJob(self.ID, currentID, "Complete", 11)
@@ -176,9 +179,6 @@ class API:
 
             updateURL = BASE_URL+"companies/"+str(self.ID)+"/jobs/"+str(job.get("ID"))
             checker = requests.patch(updateURL, headers=headers, json=payload)
-            # if complete:
-            #     print("job deemed complete, updating status...")
-            #     updateJob(self.ID, currentID, "Complete")
 
 
             #print(f"PATCH status: {checker.status_code}")
@@ -187,6 +187,11 @@ class API:
                 print(checker.text)
             else:
                 print(f"✅ Job #{currentID} updated successfully")
+
+        print()
+        print("All Edited Jobs: ")
+        for id in editedJobs:
+            print(f"Job #{id}")
         
 
 running = True

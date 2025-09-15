@@ -23,7 +23,7 @@ Only use the information provided in the notes. Do not add extra commentary, ass
 - <strong> for section headings
 - <ul> and <li> for bullet points
 - <br> for inline line breaks
-your output may have fewer than two subheading groups or more depending on the job notes given. in the below template, where it says "[REWRITE]" I instead want you to make it "[REWRITE] F" if you determine the job is incomplete or requires more attention by the company after all relevant job notes have been read (there may be more than one).
+your output may have fewer than two subheading groups or more depending on the job notes given. in the below template, where it says "[REWRITE]" I instead want you to make it "[REWRITE] INCOMPLETE" if you determine the job is incomplete or requires more attention by the company after all relevant job notes have been read (there may be more than one).
 If there is any indiciation that the job has been completed do not include the "F".
 keep note of the date, if a note of the latest date indicates the job has been finished, mark it as finished not with the F tag.
 ---
