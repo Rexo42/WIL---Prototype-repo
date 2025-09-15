@@ -1,17 +1,12 @@
 import requests
 import json
-import ollama
+import agent
 import htmlUtility
 
 from dotenv import load_dotenv
 import os
-
 load_dotenv()
-### TODO
-#   Only check completed Jobs DONE!!!!
-#   ALLOW MULTIPLE NOTE SUPPORT, IE TWO DIFFERENT TECHNICIAN NOTES
-    #IF A JOB IS DEEMED INCOMPLETE MOVE IT TO PENDING
-###
+
 ACCESS_TOKEN = os.getenv("API_KEY_Simpro")
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
 COMPANY_NAME = "Evergreen Electrical"
@@ -91,23 +86,19 @@ def test_Requests(ID): #function for running all test API requests and prints ou
     customers = get_Costomers(company.get("ID"))
     print(json.dumps(customers, indent=2))
 
-    ## add a customer and redisplay new list of customers
     print("adding customer...")
     add_Customer(company.get("ID"),"Mr","Mike", "Ross", "0422352436")
     print(json.dumps(get_Costomers(company.get("ID")), indent=2))
 
     print()
 
-    ## delete a customer and redisplay new list of customers
     print("removing customer...")
     remove_Customer(company.get("ID"), "Mike", "Ross")
     print(json.dumps(get_Costomers(company.get("ID")), indent=2))
 
-    # jobs - x name
 
 
     del company, jobList, customers
-
 ###
 
 
@@ -117,14 +108,8 @@ def get_Job_Logs(ID, JobID):
     res = response.json()
     valid_Notes = []
     for note in res:
-        #print(note.get("Type"))
-        #print(note.get("Type"))
         if note.get("Type") == "Work Order Technician Notes" or note.get("Type") == "Customer Note":
-            #print(note.get("Type"))
-            #print("found note!!!")
-            #return note
             valid_Notes.append(note)
-            #print(note.get("message"))
     return valid_Notes  
 class API:
     def __init__(self, headers):
@@ -133,6 +118,8 @@ class API:
 
     def updateJobs(self, evergreenAgent):
         jobData = get_Jobs(self.ID)
+        completeJobs = []
+        editedJobs = []
         for job in jobData:
             currentID = job.get("ID")
             URL = BASE_URL + 'companies/'+str(self.ID)+'/jobs/'+str(currentID)
@@ -150,29 +137,13 @@ class API:
                 continue
             text = ""
             for note in result:
-                #print("PRINTING NOTE CONTENTS")
-                #print(note.get("Message"))
-                #print('/n')
                 text += htmlUtility.strip_html(note.get("Message"))
                 text += '\n'
-            #print(text)
+
             print(f"editing job #{currentID}...")
-            # complete = False
+
             editedMessage = evergreenAgent.sendNotes(text)
 
-            #filtered = htmlUtility.strip_html(editedMessage)
-            editedJobs = []
-            if ("[REWRITE] INCOMPLETE" in editedMessage):
-                editedJobs.append(currentID)
-            # if (["REWRITE F" not in editedMessage]):
-            #     complete = True
-
-
-            #check = updateJob(self.ID, currentID, "Complete", 11)
-            #print(check)
-            # IF CONTAINS REWRITE F THEN ITS INCOMPLETE AND SKIP
-            # ELSE IF CONTAINS JUST REWRITE AND NO F THEN MOVE IT TO COMPLETE
-            # if ("[REWRITE] F" in editedMessage and !()):
             payload = {
             "Description" : editedMessage
             }
@@ -180,23 +151,31 @@ class API:
             updateURL = BASE_URL+"companies/"+str(self.ID)+"/jobs/"+str(job.get("ID"))
             checker = requests.patch(updateURL, headers=headers, json=payload)
 
-
-            #print(f"PATCH status: {checker.status_code}")
             if checker.status_code not in (200, 204):
                 print("❌ Error updating job:")
                 print(checker.text)
             else:
+                if ("[REWRITE] INCOMPLETE" in editedMessage):
+                    editedJobs.append(currentID)
+                elif ("[REWRITE]" in editedMessage):
+                    completeJobs.append(currentID)
                 print(f"✅ Job #{currentID} updated successfully")
 
         print()
-        print("All Edited Jobs: ")
+        print("Edited Jobs Marked Complete: ")
+        for id in completeJobs:
+            print(f"Job #{id}")
+
+        print()
+        print("Edited Jobs Deemed Incomplete: ")
         for id in editedJobs:
             print(f"Job #{id}")
+        
         
 
 running = True
 testAPI = API(headers)
-testAgent = ollama.EvergreenAgent()
+testAgent = agent.EvergreenAgent()
 print("NEW RUN...")
 while running:
     userInput = input("enter API query ('r' or 'q') ")
