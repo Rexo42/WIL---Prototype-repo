@@ -1,23 +1,29 @@
 /***********************************************
  * Evergreen + Google eSignature + Simpro (Apps Script)
- * - 템플릿 복사/치환 → HR 수동 eSignature → _Signed 카운트로 완료 판정 → Simpro 등록
+ * - 템플릿 복사/치환 → HR 수동 eSignature
+ * - 완료 판정: _ToSign Google Docs 수 === _Signed PDF 수 === eSig-Complete 라벨 수(직원별)
+ * - 완료 시 Simpro 등록
+ * - Gmail Watch 5일 주기 자동 갱신 + 증분 히스토리 처리 + 만료 복구
  ***********************************************/
 
 /* ========================= 설정/상수 ========================= */
 
-// 폼 응답 탭 이름으로 바꾸세요. (예: 'Form_Responses' 또는 현재 시트명)
+// 폼 응답 탭 이름
 const SHEET_NAME = 'Google';
 
-// Evergreen 루트 폴더 ID
+// Evergreen 루트 폴더 ID / 디렉터리 이름
 const EVERGREEN_ROOT_FOLDER_ID = '1FP_pzHPBX1M-Jm7captuNeMgWwPFpS2w';
 const SOURCE_TEMPLATES_DIRNAME = '_SourceTemplates';
 const EMPLOYEES_DIRNAME = 'Employees';
 
+// HR 계정(라벨은 이 계정 편지함에서 감시)
+const HR_EMAIL = 'bomul10258034@gmail.com';
+
 const STATUS = {
   PENDING: 'Pending',
   PREPARED: 'Prepared',
-  SIGNING: 'Signing',   // _Signed에 1개 이상 생기면
-  COMPLETE: 'Complete', // _ToSign === _Signed
+  SIGNING: 'Signing',     // _Signed에 PDF 1개 이상 생기면
+  COMPLETE: 'Complete',   // targetDocs == _Signed PDFs == eSig 라벨 수
   REGISTERED: 'Registered',
   ERROR: 'Error',
 };
@@ -25,31 +31,15 @@ const STATUS = {
 // === 폼 헤더 순서에 맞춘 컬럼(1부터) ===
 // A:Timestamp(무시)
 const COL = {
-  NAME: 2,
-  STREET: 3,
-  SUBURB: 4,
-  STATE: 5,
-  POSTCODE: 6,
-  COUNTRY: 7,
-  PHONE: 8,
-  EMAIL: 9,
-  DOB: 10,
-  POSITION: 11,
-  DEPARTMENT: 12,
-  STARTDATE: 13,
-  PROBATION_END: 14,
-  BANK_BSB: 15,
-  BANK_ACC_NO: 16,
-  BANK_ACC_NAME: 17,
-  TFN: 18,
-  ELEC_LIC: 19,
-  DRIVER_LIC: 20,
-  STATUS: 21,
-  EMP_FOLDER_ID: 22,
-  ERROR: 23
+  NAME: 2, STREET: 3, SUBURB: 4, STATE: 5, POSTCODE: 6, COUNTRY: 7,
+  PHONE: 8, EMAIL: 9, DOB: 10, POSITION: 11, DEPARTMENT: 12,
+  STARTDATE: 13, PROBATION_END: 14,
+  BANK_BSB: 15, BANK_ACC_NO: 16, BANK_ACC_NAME: 17,
+  TFN: 18, ELEC_LIC: 19, DRIVER_LIC: 20,
+  STATUS: 21, EMP_FOLDER_ID: 22, ERROR: 23
 };
 
-// Simpro
+// Simpro (스크립트 속성에서 주입)
 const props = PropertiesService.getScriptProperties();
 const SIMPRO = {
   BASE: (props.getProperty('SIMPRO_BASE') || '').replace(/\/+$/,''),
@@ -58,10 +48,40 @@ const SIMPRO = {
   DEFAULT_COMPANY_ID: parseInt((props.getProperty('SIMPRO_DEFAULT_COMPANY_ID') || '0').trim(), 10)
 };
 
+/* ============= 직원별 eSig-Complete 라벨 카운트 및 타깃 문서 수 ============= */
+// 키는 empFolderId 사용
+
+function _empKeyFromRow_(row){ return String(row[COL.EMP_FOLDER_ID - 1] || '').trim(); }
+
+function _incEmpEsig_(empKey){
+  if (!empKey) return;
+  const p = PropertiesService.getScriptProperties();
+  const key = 'ESIG_EMP__' + empKey;
+  const n = parseInt(p.getProperty(key) || '0', 10) || 0;
+  p.setProperty(key, String(n + 1));
+}
+function _getEmpEsig_(empKey){
+  if (!empKey) return 0;
+  const key = 'ESIG_EMP__' + empKey;
+  return parseInt(PropertiesService.getScriptProperties().getProperty(key) || '0', 10) || 0;
+}
+function _clearEmpEsig_(empKey){
+  if (!empKey) return;
+  PropertiesService.getScriptProperties().deleteProperty('ESIG_EMP__' + empKey);
+}
+
+function _setEmpTargetDocs_(empKey, n){
+  if (!empKey) return;
+  PropertiesService.getScriptProperties().setProperty('ESIG_TARGET__' + empKey, String(n));
+}
+function _getEmpTargetDocs_(empKey){
+  if (!empKey) return 0;
+  return parseInt(PropertiesService.getScriptProperties().getProperty('ESIG_TARGET__' + empKey) || '0', 10) || 0;
+}
 
 /* ========================= 트리거 진입점 ========================= */
 
-// 스프레드시트의 “양식 제출” 트리거에 연결
+// 스프레드시트 “양식 제출” 트리거에 연결
 function onFormSubmit(e) {
   try {
     const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
@@ -72,7 +92,7 @@ function onFormSubmit(e) {
     if (!rowIsReady_(row)) return;
 
     const empFolderId = ensureEmployeeFolders_(String(row[COL.NAME - 1] || ''), rowIdx);
-    prepareToSignDocsForRow_(rowIdx, empFolderId);
+    prepareToSignDocsForRow_(rowIdx, empFolderId); // 타깃 문서 수 설정 + 직원별 카운터 초기화 포함
 
     sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.PREPARED);
     sh.getRange(rowIdx, COL.ERROR).setValue('');
@@ -107,6 +127,9 @@ function processPendingRows() {
     }
   }
 }
+
+/* ========================= 스캔/진행 ========================= */
+
 function countDocs_(folder){
   let n=0, it=folder.getFiles();
   while(it.hasNext()){
@@ -122,44 +145,6 @@ function countPdfs_(folder){
     if (f.getMimeType() === MimeType.PDF) n++;
   }
   return n;
-}
-
-function scanAndCompleteByRow_(rowIdx) {
-  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
-  const row = sh.getRange(rowIdx, 1, 1, sh.getLastColumn()).getValues()[0];
-  const status = String(row[COL.STATUS - 1] || '').trim();
-  const empFolderId = String(row[COL.EMP_FOLDER_ID - 1] || '').trim();
-  if (!empFolderId) return 'no emp folder';
-
-  const empRoot = DriveApp.getFolderById(empFolderId);
-  const toSign  = getOrCreateChildFolder_(empRoot, '_ToSign');
-  const signed  = getOrCreateChildFolder_(empRoot, '_Signed');
-
-  // 1) _ToSign 안의 PDF를 _Signed로 이동
-  moveSignedDocs_(toSign, signed);
-
-  // 2) 구글문서 개수 vs 서명 PDF 개수만 비교
-  const docsCount  = countDocs_(toSign);
-  const pdfsCount  = countPdfs_(signed);
-
-  if (pdfsCount > 0 && status === STATUS.PREPARED) {
-    sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.SIGNING);
-  }
-
-  if (docsCount > 0 && pdfsCount === docsCount && status !== STATUS.REGISTERED) {
-    sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.COMPLETE);
-    const reg = registerEmployeeInSimproFromRow_(row);
-    if (reg.ok) {
-      sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.REGISTERED);
-      sh.getRange(rowIdx, COL.ERROR).setValue('');
-      return 'registered';
-    } else {
-      sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.ERROR);
-      sh.getRange(rowIdx, COL.ERROR).setValue('Simpro: ' + reg.error);
-      return 'simpro error';
-    }
-  }
-  return 'scanned';
 }
 
 function moveSignedDocs_(toSign, signed){
@@ -184,7 +169,46 @@ function moveSignedDocs_(toSign, signed){
   }
 }
 
-// 서명 진행/완료 스캔 → Simpro 등록
+function scanAndCompleteByRow_(rowIdx) {
+  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
+  const row = sh.getRange(rowIdx, 1, 1, sh.getLastColumn()).getValues()[0];
+  const status = String(row[COL.STATUS - 1] || '').trim();
+  const empFolderId = String(row[COL.EMP_FOLDER_ID - 1] || '').trim();
+  if (!empFolderId) return 'no emp folder';
+
+  const empRoot = DriveApp.getFolderById(empFolderId);
+  const toSign  = getOrCreateChildFolder_(empRoot, '_ToSign');
+  const signed  = getOrCreateChildFolder_(empRoot, '_Signed');
+
+  // _ToSign 안의 PDF를 _Signed로 이동(중복 방지)
+  moveSignedDocs_(toSign, signed);
+
+  const targetDocs = _getEmpTargetDocs_(empFolderId);
+  const pdfsCount  = countPdfs_(signed);          // 완료 PDF 개수
+  const labelCount = _getEmpEsig_(empFolderId);    // 직원별 라벨 카운트
+
+  // SIGNING: PDF 1개 이상이면
+  if (pdfsCount > 0 && status === STATUS.PREPARED) {
+    sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.SIGNING);
+  }
+
+  // COMPLETE/REGISTERED: 세 숫자가 모두 동일할 때
+  if (targetDocs > 0 && pdfsCount === targetDocs && labelCount === targetDocs && status !== STATUS.REGISTERED) {
+    sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.COMPLETE);
+    const reg = registerEmployeeInSimproFromRow_(row);
+    if (reg.ok) {
+      sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.REGISTERED);
+      sh.getRange(rowIdx, COL.ERROR).setValue('');
+      return 'registered';
+    } else {
+      sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.ERROR);
+      sh.getRange(rowIdx, COL.ERROR).setValue('Simpro: ' + reg.error);
+      return 'simpro error';
+    }
+  }
+  return 'scanned';
+}
+
 function scanAndCompleteAll() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
   const rows = sh.getDataRange().getValues();
@@ -202,15 +226,17 @@ function scanAndCompleteAll() {
       const toSign  = getOrCreateChildFolder_(empRoot, '_ToSign');
       const signed  = getOrCreateChildFolder_(empRoot, '_Signed');
 
-      moveSignedDocs_(toSign, signed);              // _ToSign의 PDF → _Signed
-      const docsCount = countDocs_(toSign);         // Google Docs 개수
-      const pdfsCount = countPdfs_(signed);         // 완료 PDF 개수
+      moveSignedDocs_(toSign, signed);
+
+      const targetDocs = _getEmpTargetDocs_(empFolderId);
+      const pdfsCount  = countPdfs_(signed);
+      const labelCount = _getEmpEsig_(empFolderId);
 
       if (pdfsCount > 0 && status === STATUS.PREPARED) {
         sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.SIGNING);
       }
 
-      if (docsCount > 0 && pdfsCount === docsCount && status !== STATUS.REGISTERED) {
+      if (targetDocs > 0 && pdfsCount === targetDocs && labelCount === targetDocs && status !== STATUS.REGISTERED) {
         sh.getRange(rowIdx, COL.STATUS).setValue(STATUS.COMPLETE);
         const reg = registerEmployeeInSimproFromRow_(rows[i]);
         if (reg.ok) {
@@ -247,6 +273,11 @@ function ensureEmployeeFolders_(empName, rowIdx) {
   return empRoot.getId();
 }
 
+function fileExists_(folder, name){
+  const it = folder.getFilesByName(name);
+  return it.hasNext();
+}
+
 function prepareToSignDocsForRow_(rowIdx, empFolderId) {
   const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
   const row = sh.getRange(rowIdx, 1, 1, sh.getLastColumn()).getValues()[0];
@@ -261,46 +292,186 @@ function prepareToSignDocsForRow_(rowIdx, empFolderId) {
   const files = source.getFiles();
   while (files.hasNext()) {
     const f = files.next();
-    const copied = f.makeCopy(prefixFileName_(f.getName(), row[COL.NAME - 1]), toSign);
+    const targetName = prefixFileName_(f.getName(), row[COL.NAME - 1]); // "[이름] ..."
+    if (fileExists_(toSign, targetName)) continue;
 
- // prepareToSignDocsForRow_ 안의 Google Docs 치환 부분만 교체
-if (copied.getMimeType() === MimeType.GOOGLE_DOCS) {
-  const doc = DocumentApp.openById(copied.getId());
-  replacePlaceholdersInDoc_(doc, placeholders); // ← 이 함수 호출
-  doc.saveAndClose();
+    const copied = f.makeCopy(targetName, toSign);
+
+    if (copied.getMimeType() === MimeType.GOOGLE_DOCS) {
+      const doc = DocumentApp.openById(copied.getId());
+      replacePlaceholdersInDoc_(doc, placeholders);
+      doc.saveAndClose();
+    }
+  }
+
+  // 타깃 DOC 수 기록 + 직원별 라벨 카운터 초기화
+  const targetDocs = countDocs_(toSign);
+  _setEmpTargetDocs_(String(empFolderId), targetDocs);
+  _clearEmpEsig_(String(empFolderId));
 }
+
+/* ========================= Gmail Watch / Webhook ========================= */
+// 고급 Gmail API 필요 (Services → Gmail API ON)
+
+/**
+ * 최초 1회 설치: 라벨 찾고 Watch 등록, labelId/historyId 저장
+ */
+function installGmailWatch() {
+  const PROJECT_ID = 'steady-syntax-460808-c0';
+  const TOPIC = `projects/${PROJECT_ID}/topics/esignature-complete`;
+
+  const labels = Gmail.Users.Labels.list('me').labels || [];
+  const label = labels.find(l => l.name === 'eSig-Complete');
+  if (!label) throw new Error('Gmail label "eSig-Complete" not found');
+
+  // 기존 구독 정리(옵션)
+  try { Gmail.Users.stop('me'); } catch(_) {}
+
+  // watch 등록
+  const res = Gmail.Users.watch({
+    topicName: TOPIC,
+    labelIds: [label.id],
+    labelFilterAction: 'include'
+  }, 'me');
+
+  const p = PropertiesService.getScriptProperties();
+  if (res.historyId) p.setProperty('GMAIL_HISTORY_ID', String(res.historyId));
+  p.setProperty('GMAIL_LABEL_ESIG_COMPLETE_ID', label.id);
+  p.setProperty('WATCH_LAST_RENEWED_AT', new Date().toISOString());
+}
+
+/**
+ * 5일마다 자동 갱신 트리거 설치(1회)
+ */
+function installRenewTriggerOnce(){
+  const fn = 'renewGmailWatch';
+  const exists = ScriptApp.getProjectTriggers()
+    .some(t => t.getHandlerFunction() === fn);
+  if (!exists){
+    ScriptApp.newTrigger(fn)
+      .timeBased()
+      .everyDays(5)
+      .atHour(3)
+      .create();
   }
 }
 
+/**
+ * 5일마다 watch 재등록
+ */
+function renewGmailWatch(){
+  const p = PropertiesService.getScriptProperties();
+  try { Gmail.Users.stop('me'); } catch(_) {}
+  installGmailWatch();
+  p.setProperty('WATCH_LAST_RENEWED_AT', new Date().toISOString());
+}
+
+/**
+ * Gmail Pub/Sub 수신 엔드포인트
+ * - 증분 히스토리로 새로 추가된 eSig-Complete 라벨 메일만 집계
+ * - 제목의 [SanitizedName]로 직원 매핑 → 해당 직원 카운터 +1
+ * - 처리 후 historyId 갱신 → 전체 스캔 및 완료 판정
+ */
 function doPost(e) {
   try {
-    const body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
-    const emailAddress = String(body.emailAddress || '').trim().toLowerCase(); // Gmail Push payload
-    const directEmail  = String(body.email || '').trim().toLowerCase();       // 수동 호출용
+    const p = PropertiesService.getScriptProperties();
+    const labelId = p.getProperty('GMAIL_LABEL_ESIG_COMPLETE_ID');
+    if (!labelId) return ContentService.createTextOutput('missing label id');
 
-    if (directEmail) {
-      // 직접 호출: 특정 직원만 처리
-      const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
-      const rows = sh.getDataRange().getValues();
-      for (let i = rows.length - 1; i >= 1; i--) {
-        if (String(rows[i][COL.EMAIL - 1] || '').trim().toLowerCase() === directEmail) {
-          const out = scanAndCompleteByRow_(i + 1);
-          return ContentService.createTextOutput(out);
-        }
+    // Pub/Sub 바디 디코드
+    let body = {};
+    try {
+      const raw = e?.postData?.contents || '';
+      body = raw ? JSON.parse(raw) : {};
+      if (body?.message?.data) {
+        const decoded = Utilities.newBlob(Utilities.base64Decode(body.message.data)).getDataAsString('utf-8');
+        const inner = JSON.parse(decoded);
+        // Gmail push 형식: {"emailAddress":"...","historyId":"..."}
+        body = Object.assign({}, body, inner);
       }
-      return ContentService.createTextOutput('row not found');
-    }
+    } catch (_) {}
 
-    if (emailAddress) {
-      // Gmail Push: HR함에 완료 메일이 들어왔다는 신호 → 전체 스캔
-      scanAndCompleteAll();
-      return ContentService.createTextOutput('ok: scanned all');
-    }
+    const startHistoryId = p.getProperty('GMAIL_HISTORY_ID') || String(body.historyId || '');
+    if (!startHistoryId) return ContentService.createTextOutput('no start history');
 
-    return ContentService.createTextOutput('no payload');
+    let pageToken = null, maxHistoryId = startHistoryId;
+    const empKeyByName = _buildEmpKeyIndexByName_(); // "sanitized name" → empFolderId
+
+    do {
+      const res = Gmail.Users.History.list('me', {
+        startHistoryId: startHistoryId,
+        pageToken: pageToken,
+        labelId: labelId
+      });
+
+      (res.history || []).forEach(h => {
+        if (h.id && (String(h.id) > String(maxHistoryId))) maxHistoryId = String(h.id);
+        (h.messagesAdded || []).forEach(ma => {
+          const m = ma.message;
+          if (!m || !(m.labelIds || []).includes(labelId)) return;
+
+          // 제목으로 직원 매핑
+          const msg = Gmail.Users.Messages.get('me', m.id, { format: 'metadata', metadataHeaders: ['Subject'] });
+          const subject = (msg.payload?.headers || []).find(hh => hh.name === 'Subject')?.value || '';
+
+          let empKey = _matchEmpKeyBySubject_(subject, empKeyByName); // [Name] 매칭
+          if (empKey) _incEmpEsig_(empKey);
+        });
+      });
+
+      pageToken = res.nextPageToken || null;
+    } while (pageToken);
+
+    if (maxHistoryId) p.setProperty('GMAIL_HISTORY_ID', String(maxHistoryId));
+    scanAndCompleteAll(); // 변경분 반영
+    return ContentService.createTextOutput('ok');
   } catch (err) {
+    // 히스토리 만료 복구 경로
+    if (recoverIfHistoryTooOld_(err)) {
+      scanAndCompleteAll();
+      return ContentService.createTextOutput('recovered');
+    }
     return ContentService.createTextOutput('error: ' + (err && err.message ? err.message : err));
   }
+}
+
+/**
+ * 히스토리 만료(HistoryId too old) 복구
+ * - 최근 라벨된 메시지 스냅샷 스캔(간단 버전: 제목만 확인하여 집계)
+ * - watch 재설치 및 historyId 갱신
+ */
+function recoverIfHistoryTooOld_(err){
+  const msg = String(err && err.message || err || '');
+  if (!/HistoryId.*too.*old/i.test(msg)) return false;
+
+  const p = PropertiesService.getScriptProperties();
+  const labelId = p.getProperty('GMAIL_LABEL_ESIG_COMPLETE_ID');
+  if (labelId){
+    const empKeyByName = _buildEmpKeyIndexByName_();
+    let pageToken = null, scanned = 0;
+    do {
+      const res = Gmail.Users.Messages.list('me', {
+        labelIds: [labelId],
+        maxResults: 100,
+        pageToken
+      });
+      (res.messages || []).forEach(m => {
+        try {
+          const msg = Gmail.Users.Messages.get('me', m.id, { format: 'metadata', metadataHeaders: ['Subject'] });
+          const subject = (msg.payload?.headers || []).find(hh => hh.name === 'Subject')?.value || '';
+          const empKey = _matchEmpKeyBySubject_(subject, empKeyByName);
+          if (empKey) _incEmpEsig_(empKey);
+        } catch(_){}
+      });
+      scanned += (res.messages || []).length;
+      pageToken = res.nextPageToken || null;
+      if (scanned >= 500) break; // 과도 방지
+    } while(pageToken);
+  }
+
+  try { Gmail.Users.stop('me'); } catch(_) {}
+  installGmailWatch();
+  return true;
 }
 
 /* ========================= Simpro ========================= */
@@ -314,7 +485,9 @@ function registerEmployeeInSimproFromRow_(row) {
   const name = String(row[COL.NAME - 1] || '').trim();
   const email = String(row[COL.EMAIL - 1] || '').trim();
   const position = String(row[COL.POSITION - 1] || '').trim();
-  const startDate = row[COL.STARTDATE - 1] ? Utilities.formatDate(new Date(row[COL.STARTDATE - 1]), Session.getScriptTimeZone(), 'yyyy-MM-dd') : todayStr;
+  const startDate = row[COL.STARTDATE - 1]
+    ? Utilities.formatDate(new Date(row[COL.STARTDATE - 1]), Session.getScriptTimeZone(), 'yyyy-MM-dd')
+    : todayStr;
   const username = buildUsernameFromName_(name);
   const password = 'Evergreen1234!';
 
@@ -344,35 +517,28 @@ function registerEmployeeInSimproFromRow_(row) {
     : { ok: false, error: `HTTP_${resp.getResponseCode()}: ${resp.getContentText()}` };
 }
 
-
 /* ========================= 유틸 ========================= */
-
 
 function getOrCreateChildFolder_(parent, name) {
   const it = parent.getFoldersByName(name);
   return it.hasNext() ? it.next() : parent.createFolder(name);
 }
-
 function countFiles_(folder) {
   let n = 0; const it = folder.getFiles();
   while (it.hasNext()) { it.next(); n++; }
   return n;
 }
-
 function sanitizeName_(s) {
   s = String(s || '').trim();
   if (!s) s = 'employee-' + Date.now();
   return s.replace(/[\\/:*?"<>|#\[\]@]/g, '_');
 }
-
 function prefixFileName_(name, empName) {
   return `[${sanitizeName_(empName)}] ${name}`;
 }
-
 function escapeRegex_(s) {
   return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
 function buildPlaceholderMap_(row) {
   const fmtDate = v => v ? Utilities.formatDate(new Date(v), Session.getScriptTimeZone(), 'yyyy-MM-dd') : '';
   return {
@@ -397,29 +563,23 @@ function buildPlaceholderMap_(row) {
     DriverLicence: String(row[COL.DRIVER_LIC - 1] || '')
   };
 }
-
 function buildUsernameFromName_(name) {
   let base = String(name || '').toLowerCase().trim();
   base = base.replace(/[^a-z0-9]+/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '');
   if (!base) base = 'employee' + Date.now();
   return base;
 }
-
 function replacePlaceholdersInDoc_(doc, map) {
-  // 1) 공통 유틸
-  const safe = v => String(v ?? '').replace(/\$/g, '\\$'); // $ 이스케이프
+  const safe = v => String(v ?? '').replace(/\$/g, '\\$');
   const buildPattern = k => '(?i)\\{\\{\\s*' + escapeRegex_(k) + '\\s*\\}\\}';
 
-  // 2) 한 요소(본문/머리말/바닥글/문단/셀)의 텍스트 전체에 대해 치환
   const replaceInElement = (el) => {
     if (!el) return;
-    // 표 밖의 문단은 editAsText()로 런 경계를 넘어 치환 가능
     if (el.editAsText) {
       const t = el.editAsText();
       Object.keys(map).forEach(k => t.replaceText(buildPattern(k), safe(map[k])));
       return;
     }
-    // 표(Table) 처리: 셀→문단 순회
     const ElementType = DocumentApp.ElementType;
     if (el.getType && el.getType() === ElementType.TABLE) {
       const table = el.asTable();
@@ -443,43 +603,108 @@ function replacePlaceholdersInDoc_(doc, map) {
   const header = doc.getHeader();
   const footer = doc.getFooter();
 
-  // 본문 최상위 자식들(문단/표 등) 모두 처리
-  for (let i = 0; i < body.getNumChildren(); i++) {
-    replaceInElement(body.getChild(i));
-  }
-  // 머리말/바닥글 내부도 동일 처리
+  for (let i = 0; i < body.getNumChildren(); i++) replaceInElement(body.getChild(i));
   replaceInElement(header);
   replaceInElement(footer);
 
-  // 추가로 본문 전체에 한 번 더(문단 경계에 안 걸린 경우 대비)
   Object.keys(map).forEach(k => body.replaceText(buildPattern(k), safe(map[k])));
 }
 
+/**
+ * 시트의 이름→empFolderId 인덱스 생성
+ * Key는 sanitizeName(name)
+ */
+function _buildEmpKeyIndexByName_(){
+  const map = new Map();
+  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
+  const rows = sh.getDataRange().getValues();
+  for (let i=1;i<rows.length;i++){
+    const name = sanitizeName_(String(rows[i][COL.NAME - 1] || '').trim());
+    const empId = String(rows[i][COL.EMP_FOLDER_ID - 1] || '').trim();
+    if (name && empId) map.set(name, empId);
+  }
+  return map;
+}
+
+/**
+ * 메일 제목에서 [SanitizedName] 패턴으로 직원 키 매칭
+ */
+function _matchEmpKeyBySubject_(subject, empKeyByName){
+  if (!subject) return null;
+  // 큰따옴표 안의 실제 문서제목을 우선 추출
+  const quoted = subject.match(/"([^"]+)"/);
+  const s = quoted ? quoted[1] : subject;
+
+  // 문서제목 안에서 [토큰] 추출
+  const m = s.match(/\[([^\]]+)\]/);
+  if (m) {
+    const token = sanitizeName_(m[1].trim()); // 예: '홍길동' -> '홍길동', 'dd' -> 'dd'
+    if (empKeyByName.has(token)) return empKeyByName.get(token);
+  }
+
+  // 보조 휴리스틱: 사전에 등록된 이름 토큰이 제목에 그대로 포함되는지 검사
+  for (const [name, key] of empKeyByName.entries()) {
+    if (s.includes('[' + name + ']')) return key;
+  }
+  return null;
+}
+
+/* ========================= 초기 실행 가이드(수동) ========================= */
+// 1) installGmailWatch() 실행
+// 2) installRenewTriggerOnce() 실행
 
 
- 
-
-
-// Gmail 고급 서비스 필요 (Gmail API ON)
-function installGmailWatch() {
-  const PROJECT_ID = 'steady-syntax-460808-c0';
-  const TOPIC = `projects/${PROJECT_ID}/topics/esignature-complete`;
-
-  const labels = Gmail.Users.Labels.list('me').labels || [];
-  const label = labels.find(l => l.name === 'eSig-Complete');
-  if (!label) throw new Error('Gmail label "eSig-Complete" not found');
-
-  // 인자 순서: (resource, userId)
-  const res = Gmail.Users.watch({
-    topicName: TOPIC,
-    labelIds: [label.id],
-    labelFilterAction: 'include'
-  }, 'me');
-
-  if (res.historyId) {
-    PropertiesService.getScriptProperties()
-      .setProperty('GMAIL_HISTORY_ID', String(res.historyId));
+// 테스트: 특정 직원 이름을 가진 라벨 완료 메일이 들어왔다고 가정하고 카운트 증가
+function testIncEmpEsig() {
+  const empKeyByName = _buildEmpKeyIndexByName_();
+  // 실제 받은 제목 형식으로 가정
+  const fakeSubject = 'eSigned document ready: "[dd] Application for employment - 16/09/2025, 09:58"';
+  const empKey = _matchEmpKeyBySubject_(fakeSubject, empKeyByName);
+  if (empKey) {
+    _incEmpEsig_(empKey);
+    Logger.log("카운트 증가: " + empKey + " → " + _getEmpEsig_(empKey));
+  } else {
+    Logger.log("매칭 실패: 시트의 이름과 문서 제목의 [토큰]이 동일해야 함");
   }
 }
 
-
+function testListEsigCompleteMessages() {
+  const p = PropertiesService.getScriptProperties();
+  const labelId = p.getProperty('GMAIL_LABEL_ESIG_COMPLETE_ID');
+  if (!labelId) throw new Error("라벨 ID 없음, installGmailWatch() 먼저 실행");
+  
+  const res = Gmail.Users.Messages.list('me', {
+    labelIds: [labelId],
+    maxResults: 10
+  });
+  (res.messages || []).forEach(m => {
+    const msg = Gmail.Users.Messages.get('me', m.id, { format: 'metadata', metadataHeaders: ['Subject'] });
+    const subject = (msg.payload?.headers || []).find(h => h.name === 'Subject')?.value;
+    Logger.log("라벨된 메일: " + subject);
+  });
+}
+function testDoPostSimulation() {
+  const fakeEvent = {
+    postData: {
+      contents: JSON.stringify({
+        message: {
+          data: Utilities.base64Encode(
+            JSON.stringify({ emailAddress: "bomul10258034@gmail.com", historyId: "1304000" })
+          )
+        }
+      })
+    }
+  };
+  const out = doPost(fakeEvent);
+  Logger.log(out.getContent());
+}
+function cleanupOldProps(){
+  const p = PropertiesService.getScriptProperties();
+  const all = p.getProperties();
+  Object.keys(all).forEach(k => {
+    if (k.startsWith('ESIG_COUNT__') || k.startsWith('ESIG_DONE__')) {
+      p.deleteProperty(k);
+    }
+  });
+  // 참고: ESIG_EMP__, GMAIL_HISTORY_ID, GMAIL_LABEL_ESIG_COMPLETE_ID 는 유지
+}
