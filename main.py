@@ -5,7 +5,7 @@ import htmlUtility
 
 from dotenv import load_dotenv
 import os
-load_dotenv()
+# load_dotenv()
 
 ACCESS_TOKEN = os.getenv("API_KEY_Simpro")
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
@@ -176,8 +176,6 @@ class API:
 running = True
 testAPI = API(headers)
 testAgent = agent.EvergreenAgent()
-print("Current working directory:", os.getcwd())
-print("Files in directory:", os.listdir('.'))
 print("NEW RUN...")
 while running:
     userInput = input("enter API query ('r' or 'q') ")
