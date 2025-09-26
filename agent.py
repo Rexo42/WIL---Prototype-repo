@@ -7,7 +7,6 @@ API_KEY =  os.getenv("API_KEY_Deepseek")
 print(API_KEY)
 class EvergreenAgent():
     def __init__(self, modelName = "deepseek-chat", APIkey = API_KEY):
-        print(os.getenv("API_KEY_Deepseek" + "LOOK HERERERERE"))
         self.modelName = modelName
         self.URL = "https://api.deepseek.com/v1/chat/completions"
         self.chatHistory = []
