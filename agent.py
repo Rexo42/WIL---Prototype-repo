@@ -3,8 +3,6 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-
-
 class EvergreenAgent():
     def __init__(self, modelName = "deepseek-chat", APIkey = os.getenv("API_KEY_Deepseek")):
         self.modelName = modelName
@@ -23,7 +21,7 @@ Only use the information provided in the notes. Do not add extra commentary, ass
 - <strong> for section headings
 - <ul> and <li> for bullet points
 - <br> for inline line breaks
-your output may have fewer than two subheading groups or more depending on the job notes given. in the below template, where it says "[REWRITE]" I instead want you to make it "[REWRITE] F" if you determine the job is incomplete or requires more attention by the company after all relevant job notes have been read (there may be more than one).
+your output may have fewer than two subheading groups or more depending on the job notes given. in the below template, where it says "[REWRITE]" I instead want you to make it "[REWRITE] INCOMPLETE" if you determine the job is explicitly incomplete or requires more attention by the company after all relevant job notes have been read (there may be more than one).
 If there is any indiciation that the job has been completed do not include the "F".
 keep note of the date, if a note of the latest date indicates the job has been finished, mark it as finished not with the F tag.
 ---
@@ -97,11 +95,6 @@ keep note of the date, if a note of the latest date indicates the job has been f
         self.chatHistory.append({"role": "user", "content": self.initPrompt})
         self.chatHistory.append({"role": "user", "content": self.initPrompt2})
         self.chatHistory.append({"role": "assistant", "content": "Understood. Ready to process job notes."})
-        self.demoNotes = """
-        Hayden Jensen (22/08/2025)
-        Arrived at site, Spoke to customer, inspected hot water system, plug for the pump had lots of water on  top of it. no cracks in connection box. no penetrations through back of box. siliconed around plug
-        inspected aircon. unit is not old. isolator has no signs of moisture. Connection in ac high enough not be an issue.
-        """
 
     def sendNotes(self, jobNotes):
         self.chatHistory.append({"role": "user", "content": jobNotes})
@@ -122,17 +115,10 @@ keep note of the date, if a note of the latest date indicates the job has been f
         response = requests.post(self.URL, headers=headers ,json=prompt_payload, timeout=300)
 
         self.chatHistory.pop(-1)
-        #print("✅ Response received.")
 
         if response.status_code == 200:
             data = response.json()
             assistant_message = data['choices'][0]['message']['content']
-            #print("💬 Assistant: \n", assistant_message)
             return assistant_message
-
-            #self.chatHistory.append({"role": "assistant", "content": assistant_message})
         else:
             print("❌ Error:", response.status_code, response.text)
-
-    def testRun(self):
-        self.sendNotes(self.demoNotes)
