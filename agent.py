@@ -2,7 +2,7 @@ import requests
 from dotenv import load_dotenv
 import os
 
-load_dotenv(dotenv_path='.variables')
+load_dotenv()
 class EvergreenAgent():
     def __init__(self, modelName = "deepseek-chat", APIkey = os.getenv("API_KEY_Deepseek")):
         self.modelName = modelName

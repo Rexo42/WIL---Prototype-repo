@@ -5,7 +5,7 @@ import htmlUtility
 
 from dotenv import load_dotenv
 import os
-load_dotenv(dotenv_path='.variables')
+load_dotenv()
 
 ACCESS_TOKEN = os.getenv("API_KEY_Simpro")
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
