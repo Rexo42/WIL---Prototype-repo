@@ -5,5 +5,5 @@ docker save -o evergreen-app.tar evergreen-app
 docker run -it --rm evergreen-app
 
 COMMANDS TO SETUP:
-docker run -it --rm evergreen-app
+docker load -i evergreen-app.tar
 docker run -it --rm evergreen-app
