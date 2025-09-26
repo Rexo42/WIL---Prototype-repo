@@ -8,6 +8,7 @@ import os
 load_dotenv()
 
 ACCESS_TOKEN = os.getenv("API_KEY_Simpro")
+print(ACCESS_TOKEN + "HERERERERERER")
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
 COMPANY_NAME = "Evergreen Electrical"
 
@@ -171,8 +172,6 @@ class API:
         for id in editedJobs:
             print(f"Job #{id}")
         
-        
-
 running = True
 testAPI = API(headers)
 testAgent = agent.EvergreenAgent()
