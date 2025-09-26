@@ -176,6 +176,8 @@ class API:
 running = True
 testAPI = API(headers)
 testAgent = agent.EvergreenAgent()
+print("Current working directory:", os.getcwd())
+print("Files in directory:", os.listdir('.'))
 print("NEW RUN...")
 while running:
     userInput = input("enter API query ('r' or 'q') ")
