@@ -8,10 +8,11 @@ import os
 load_dotenv()
 
 ACCESS_TOKEN = os.getenv("API_KEY_Simpro")
-API_KEY = os.getenv("API_KEY_Deepseek")
+API_KEY = os.getenv("API_KEY_DeepSeek")
 
 print(ACCESS_TOKEN)
 print(API_KEY)
+
 BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
 COMPANY_NAME = "Evergreen Electrical"
 
