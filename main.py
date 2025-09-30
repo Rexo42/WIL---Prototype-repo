@@ -1,28 +1,44 @@
 import requests
 import json
-import ollama
+import agent
 import htmlUtility
-### TODO
-#   additional functionality to mark jobs as completed or flag them for review if deemed potentially incomplete
-#       error handling ie: no work notes just skip over/leave
-#
-###
-ACCESS_TOKEN = '8077324ef83f67fbc7b0507e1e03ec85ff6a4655'
-BASE_URL = 'https://enterprise-sandbox-au.simprosuite.com/api/v1.0/'
-COMPANY_NAME = "Evergreen Electrical"
+
+from dotenv import load_dotenv
+import os
+load_dotenv()
+
+ACCESS_TOKEN = os.getenv("API_KEY_Simpro")
+BASE_URL = os.getenv("BASE_URL")
+COMPANY_NAME = os.getenv("COMPANY_NAME")
+
+# print("DEBUG .env values:")
+# print("Simpro Key:", os.getenv("API_KEY_Simpro")[:6], "...")
+# print("Base URL:", os.getenv("BASE_URL"))
+# print("Company:", os.getenv("COMPANY_NAME"))
 
 headers = {
-'Authorization': f'Bearer {ACCESS_TOKEN}',
-'Accept': 'application/json',
-'Content-Type': 'application/json'
+    'Authorization': f'Bearer {ACCESS_TOKEN}',
+    'Accept': 'application/json',
+    'Content-Type': 'application/json'
 }
 
-### API FUNCTIONS ###
-def get_Jobs(ID): #gets list of all jobs 
-    URL = BASE_URL+"companies/"+str(ID)+'/jobs/'
-    return requests.get(URL, headers=headers).json()
+# check
+# print("Simpro Key:", ACCESS_TOKEN[:6], "...")  # frist 6
+# print("Base URL:", BASE_URL)
+# print("Company:", COMPANY_NAME)
 
-def get_Company(): #finds evergreen electrical
+### API FUNCTIONS ###
+#def get_Jobs(ID): #gets list of all jobs 
+#    URL = BASE_URL+"companies/"+str(ID)+'/jobs/'
+#    return requests.get(URL, headers=headers).json()
+def get_Jobs(ID): 
+    URL = BASE_URL+"companies/"+str(ID)+'/jobs/'
+    # print("DEBUG: Calling", URL)
+    response = requests.get(URL, headers=headers)
+    # print("DEBUG Response:", response.text)
+    return response.json()
+
+""" def get_Company(): #finds evergreen electrical
     URL = BASE_URL+"companies/"
     companies = requests.get(URL, headers=headers).json()
     for company in companies:
@@ -30,7 +46,24 @@ def get_Company(): #finds evergreen electrical
             idNum = company.get("ID")
             
             return requests.get(BASE_URL+"companies/"+str(idNum), headers=headers).json()    
-    return "company not found!"
+    return {"error": "company not found!"} """
+def get_Company():  # finds evergreen electrical
+    URL = BASE_URL + "companies/"
+    companies = requests.get(URL, headers=headers).json()
+    print("DEBUG companies response:", json.dumps(companies, indent=2))
+    for company in companies:
+        if company.get("Name") == COMPANY_NAME:
+            print("DEBUG matched company:", company) 
+            idNum = (
+                company.get("ID")
+                or company.get("Id")
+                or company.get("CompanyID")
+                or company.get("CompanyId")
+            )
+            if idNum:
+                return requests.get(BASE_URL + "companies/" + str(idNum), headers=headers).json()
+
+    return {"error": "company not found!"}
 
 def get_Costomers(ID): #gets all customers
     URL = BASE_URL+"companies/"+str(ID)+'/customers/'
@@ -64,6 +97,13 @@ def remove_Customer(ID, GivenName, FamilyName): #removes a customer
             URL += "individuals/"+str(customer.get("ID"))
             requests.delete(URL, headers=headers)
 
+def updateJob(ID, jobID, stageID):
+    URL = BASE_URL+"companies/"+str(ID)+'/jobs/'+str(jobID)
+    print(URL)
+    payload = {"Stage": stageID}
+    return requests.patch(URL, headers=headers, json=payload)
+
+
 ### TESTING ###
 def test_Requests(ID): #function for running all test API requests and prints out resulting data
     company = get_Company()
@@ -79,41 +119,29 @@ def test_Requests(ID): #function for running all test API requests and prints ou
     customers = get_Costomers(company.get("ID"))
     print(json.dumps(customers, indent=2))
 
-    ## add a customer and redisplay new list of customers
     print("adding customer...")
     add_Customer(company.get("ID"),"Mr","Mike", "Ross", "0422352436")
     print(json.dumps(get_Costomers(company.get("ID")), indent=2))
 
     print()
 
-    ## delete a customer and redisplay new list of customers
     print("removing customer...")
     remove_Customer(company.get("ID"), "Mike", "Ross")
     print(json.dumps(get_Costomers(company.get("ID")), indent=2))
 
-    # jobs - x name
-
-
     del company, jobList, customers
+###
+
 
 def get_Job_Logs(ID, JobID):
-    params = {
-    "search": "all",
-    "columns": "Type,Message,Date"
-}
-    relevantNotes = []
     URL = BASE_URL+"companies/"+str(ID)+"/jobs/"+str(JobID)+"/timelines/"
-    #print(demo.status_code)
-    ###
-
-
-    #print(URL)
     response = requests.get(URL, headers=headers)
     res = response.json()
+    valid_Notes = []
     for note in res:
-        if note.get("Type") == "Customer Note":
-            return note
-
+        if note.get("Type") == "Work Order Technician Notes" or note.get("Type") == "Customer Note":
+            valid_Notes.append(note)
+    return valid_Notes  
 class API:
     def __init__(self, headers):
         self.ID = get_Company().get("ID")
@@ -121,42 +149,73 @@ class API:
 
     def updateJobs(self, evergreenAgent):
         jobData = get_Jobs(self.ID)
+
+        if not isinstance(jobData, list):
+            print("❌ Error: get_Jobs did not return a list")
+            print("Response was:", jobData)
+            return
+    
+        completeJobs = []
+        editedJobs = []
         for job in jobData:
-            print(json.dumps(job, indent=2))
-            print(job.get("ID"))
+            if not isinstance(job, dict):
+                print("⚠️ Skipping invalid job entry:", job)
+                continue
+            currentID = job.get("ID")
+            URL = BASE_URL + 'companies/'+str(self.ID)+'/jobs/'+str(currentID)
+            data = requests.get(URL, headers=headers).json()
+            if (data.get("Stage") != "Complete"):
+                continue
+
             content = htmlUtility.strip_html(job.get("Description"))
-            # if content.startswith("[REWRITE]"):
-            #     print("skipping job...")
-            #     continue
+            if content.startswith("[REWRITE]"):
+                print(f"skipping job...(#{currentID}) REASON: contains [REWRITE TAG]")
+                continue
             result = get_Job_Logs(self.ID, job.get("ID"))
-            print(json.dumps(result, indent=2))
-            filtered = htmlUtility.strip_html(result.get("Message"))
-            editedMessage = evergreenAgent.sendNotes(filtered)
+            if (not result):
+                print(f"skipping job... (#{currentID}) REASON: no valid job notes found")
+                continue
+            text = ""
+            for note in result:
+                text += htmlUtility.strip_html(note.get("Message"))
+                text += '\n'
+
+            print(f"editing job #{currentID}...")
+
+            editedMessage = evergreenAgent.sendNotes(text)
 
             payload = {
             "Description" : editedMessage
             }
 
             updateURL = BASE_URL+"companies/"+str(self.ID)+"/jobs/"+str(job.get("ID"))
-    
             checker = requests.patch(updateURL, headers=headers, json=payload)
-            print(f"PATCH status: {checker.status_code}")
+
             if checker.status_code not in (200, 204):
                 print("❌ Error updating job:")
                 print(checker.text)
             else:
-                print("✅ Job updated successfully")
-            
-            #######evergreenAgent.testRun()
+                if ("[REWRITE] INCOMPLETE" in editedMessage):
+                    editedJobs.append(currentID)
+                elif ("[REWRITE]" in editedMessage):
+                    completeJobs.append(currentID)
+                print(f"✅ Job #{currentID} updated successfully")
 
-             ## contents needs to be the logs when i get them
-        # takes in an instance of ollama??
-            #for job in jobs
-            # does logic for getting notes off timeline and updating them and putting it into job description
+        print()
+        print("Edited Jobs Marked Complete: ")
+        for id in completeJobs:
+            print(f"Job #{id}")
+
+        print()
+        print("Edited Jobs Deemed Incomplete: ")
+        for id in editedJobs:
+            print(f"Job #{id}")
+        
+        
 
 running = True
 testAPI = API(headers)
-testAgent = ollama.EvergreenAgent()
+testAgent = agent.EvergreenAgent()
 print("NEW RUN...")
 while running:
     userInput = input("enter API query ('r' or 'q') ")
